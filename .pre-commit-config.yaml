@@ -1,0 +1,69 @@
+# Hooks for fl_nodes_v2.
+#
+# Every Dart hook goes through `fvm`. The toolchain is pinned in .fvmrc and
+# `flutter`/`dart` are deliberately not on PATH, so a hook calling a bare
+# `dart` would either fail outright or — worse — quietly use a different SDK
+# than the one the package is pinned to.
+#
+#   pre-commit install          once, per clone
+#   pre-commit run --all-files  to sweep the whole tree
+
+default_language_version:
+  python: python3
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.(frag|vert)$
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+
+  - repo: local
+    hooks:
+      # Checked, never applied. A hook that rewrites a file under you turns one
+      # failed commit into two.
+      - id: dart-format
+        name: dart format
+        entry: fvm dart format --output=none --set-exit-if-changed
+        language: system
+        types: [dart]
+
+      - id: analyze
+        name: analyze
+        entry: fvm flutter analyze
+        language: system
+        types: [dart]
+        pass_filenames: false
+
+      - id: test
+        name: test
+        entry: fvm flutter test
+        language: system
+        types: [dart]
+        pass_filenames: false
+
+      # The example is not a sample, it is the only thing that exercises the
+      # editor end to end. A change in lib/ that breaks it should fail here
+      # rather than at the next person's desk — so both of these run on any
+      # Dart change, not just on changes under example/.
+      - id: example-analyze
+        name: analyze · example
+        entry: bash -c 'cd example && fvm flutter analyze'
+        language: system
+        types: [dart]
+        pass_filenames: false
+
+      - id: example-test
+        name: test · example
+        entry: bash -c 'cd example && fvm flutter test'
+        language: system
+        types: [dart]
+        pass_filenames: false

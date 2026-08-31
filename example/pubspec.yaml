@@ -1,0 +1,25 @@
+name: fl_nodes_v2_example
+description: "Standalone demo for the fl_nodes_v2 package."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fl_nodes_v2:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/thumbnail.png
+  shaders:
+    - packages/fl_nodes_v2/shaders/grid.frag

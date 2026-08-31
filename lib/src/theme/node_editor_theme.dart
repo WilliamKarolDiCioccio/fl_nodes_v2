@@ -1,0 +1,277 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+/// Visual configuration for the canvas chrome: grid, connections, ports,
+/// selection affordances and zoom limits.
+///
+/// Node bodies are drawn by the host's builder and are deliberately not
+/// themed here.
+@immutable
+class NodeEditorTheme {
+  const NodeEditorTheme({
+    required this.background,
+    required this.gridLine,
+    required this.gridLineMajor,
+    required this.connectionColor,
+    required this.selectedConnectionColor,
+    required this.hoveredConnectionColor,
+    required this.pendingConnectionColor,
+    required this.invalidConnectionColor,
+    required this.portColor,
+    required this.portHoverColor,
+    required this.portBorderColor,
+    required this.selectionColor,
+    required this.marqueeColor,
+    this.showGrid = true,
+    this.gridSpacing = 24,
+    this.gridMajorEvery = 5,
+    this.connectionWidth = 2,
+    this.selectedConnectionWidth = 3,
+    this.connectionCurvature = 0.5,
+    this.portRadius = 6,
+    this.portHitRadius = 11,
+    this.portMinScale = 0.25,
+    this.selectionWidth = 2,
+    this.selectionRadius = const Radius.circular(10),
+    this.selectionInset = 3,
+    this.minScale = 0.15,
+    this.maxScale = 3.0,
+    this.snapToGrid = 0,
+    this.connectionHitTolerance = 9,
+    this.connectionArrowSpacing = 140,
+    this.connectionArrowMaxCount = 4,
+  });
+
+  factory NodeEditorTheme.dark({Color accent = const Color(0xFF7C9CF5)}) {
+    return NodeEditorTheme(
+      background: const Color(0xFF15171C),
+      gridLine: const Color(0x14FFFFFF),
+      gridLineMajor: const Color(0x24FFFFFF),
+      connectionColor: const Color(0xFF6B7386),
+      selectedConnectionColor: accent,
+      hoveredConnectionColor: const Color(0xFF9AA3B8),
+      pendingConnectionColor: accent,
+      invalidConnectionColor: const Color(0xFFE05A6B),
+      portColor: const Color(0xFF8B93A7),
+      portHoverColor: accent,
+      portBorderColor: const Color(0xFF15171C),
+      selectionColor: accent,
+      marqueeColor: accent,
+    );
+  }
+
+  factory NodeEditorTheme.light({Color accent = const Color(0xFF3B62D9)}) {
+    return NodeEditorTheme(
+      background: const Color(0xFFF6F7FA),
+      gridLine: const Color(0x11000000),
+      gridLineMajor: const Color(0x1F000000),
+      connectionColor: const Color(0xFF9AA1B2),
+      selectedConnectionColor: accent,
+      hoveredConnectionColor: const Color(0xFF6C7488),
+      pendingConnectionColor: accent,
+      invalidConnectionColor: const Color(0xFFD1435B),
+      portColor: const Color(0xFF7E869B),
+      portHoverColor: accent,
+      portBorderColor: const Color(0xFFF6F7FA),
+      selectionColor: accent,
+      marqueeColor: accent,
+    );
+  }
+
+  final Color background;
+  final Color gridLine;
+  final Color gridLineMajor;
+  final bool showGrid;
+
+  /// Scene-space distance between minor grid lines.
+  final double gridSpacing;
+
+  /// Every n-th grid line is drawn with [gridLineMajor].
+  final int gridMajorEvery;
+
+  final Color connectionColor;
+  final Color selectedConnectionColor;
+  final Color hoveredConnectionColor;
+
+  /// Colour of the curve being dragged out of a port.
+  final Color pendingConnectionColor;
+
+  /// Colour of that curve while it is over an invalid drop target.
+  final Color invalidConnectionColor;
+
+  final double connectionWidth;
+  final double selectedConnectionWidth;
+
+  /// Fraction of the endpoint distance used for the bezier control arms.
+  final double connectionCurvature;
+
+  /// Screen-space slop when picking a connection.
+  final double connectionHitTolerance;
+
+  /// Scene distance aimed for between the direction arrows on a connection.
+  ///
+  /// The count is rounded to fit the curve's length and clamped to
+  /// `1..connectionArrowMaxCount`, so a short wire still says which way it
+  /// points and a long one across the canvas does not turn into a dotted line.
+  final double connectionArrowSpacing;
+
+  final int connectionArrowMaxCount;
+
+  final Color portColor;
+  final Color portHoverColor;
+  final Color portBorderColor;
+
+  /// Drawn radius of a port handle, in scene units.
+  final double portRadius;
+
+  /// Touch target radius of a port handle, in scene units.
+  final double portHitRadius;
+
+  /// Below this zoom, handles stop being drawn *and* stop being hittable.
+  ///
+  /// One rule for both on purpose: a handle too small to see is also too small
+  /// to aim at — at 15% zoom the whole target is under two pixels across — and
+  /// a dot that is invisible but still starts a wire is worse than one that is
+  /// simply not there yet.
+  ///
+  /// Handles are painted rather than built, so crossing this costs a repaint
+  /// and nothing else. Doing the same by adding and removing widgets would
+  /// rebuild every node on screen at the threshold, which is a stutter exactly
+  /// where the user is already moving.
+  final double portMinScale;
+
+  final Color selectionColor;
+  final double selectionWidth;
+  final Radius selectionRadius;
+
+  /// How far the selection outline sits outside the node's bounds.
+  final double selectionInset;
+
+  final Color marqueeColor;
+
+  final double minScale;
+  final double maxScale;
+
+  /// Grid size that dragged nodes snap to; 0 disables snapping.
+  final double snapToGrid;
+
+  NodeEditorTheme copyWith({
+    Color? background,
+    Color? gridLine,
+    Color? gridLineMajor,
+    bool? showGrid,
+    double? gridSpacing,
+    int? gridMajorEvery,
+    Color? connectionColor,
+    Color? selectedConnectionColor,
+    Color? hoveredConnectionColor,
+    Color? pendingConnectionColor,
+    Color? invalidConnectionColor,
+    double? connectionWidth,
+    double? selectedConnectionWidth,
+    double? connectionCurvature,
+    double? connectionHitTolerance,
+    double? connectionArrowSpacing,
+    int? connectionArrowMaxCount,
+    Color? portColor,
+    Color? portHoverColor,
+    Color? portBorderColor,
+    double? portRadius,
+    double? portHitRadius,
+    double? portMinScale,
+    Color? selectionColor,
+    double? selectionWidth,
+    Radius? selectionRadius,
+    double? selectionInset,
+    Color? marqueeColor,
+    double? minScale,
+    double? maxScale,
+    double? snapToGrid,
+  }) {
+    return NodeEditorTheme(
+      background: background ?? this.background,
+      gridLine: gridLine ?? this.gridLine,
+      gridLineMajor: gridLineMajor ?? this.gridLineMajor,
+      showGrid: showGrid ?? this.showGrid,
+      gridSpacing: gridSpacing ?? this.gridSpacing,
+      gridMajorEvery: gridMajorEvery ?? this.gridMajorEvery,
+      connectionColor: connectionColor ?? this.connectionColor,
+      selectedConnectionColor:
+          selectedConnectionColor ?? this.selectedConnectionColor,
+      hoveredConnectionColor:
+          hoveredConnectionColor ?? this.hoveredConnectionColor,
+      pendingConnectionColor:
+          pendingConnectionColor ?? this.pendingConnectionColor,
+      invalidConnectionColor:
+          invalidConnectionColor ?? this.invalidConnectionColor,
+      connectionWidth: connectionWidth ?? this.connectionWidth,
+      selectedConnectionWidth:
+          selectedConnectionWidth ?? this.selectedConnectionWidth,
+      connectionCurvature: connectionCurvature ?? this.connectionCurvature,
+      connectionHitTolerance:
+          connectionHitTolerance ?? this.connectionHitTolerance,
+      connectionArrowSpacing:
+          connectionArrowSpacing ?? this.connectionArrowSpacing,
+      connectionArrowMaxCount:
+          connectionArrowMaxCount ?? this.connectionArrowMaxCount,
+      portColor: portColor ?? this.portColor,
+      portHoverColor: portHoverColor ?? this.portHoverColor,
+      portBorderColor: portBorderColor ?? this.portBorderColor,
+      portRadius: portRadius ?? this.portRadius,
+      portHitRadius: portHitRadius ?? this.portHitRadius,
+      portMinScale: portMinScale ?? this.portMinScale,
+      selectionColor: selectionColor ?? this.selectionColor,
+      selectionWidth: selectionWidth ?? this.selectionWidth,
+      selectionRadius: selectionRadius ?? this.selectionRadius,
+      selectionInset: selectionInset ?? this.selectionInset,
+      marqueeColor: marqueeColor ?? this.marqueeColor,
+      minScale: minScale ?? this.minScale,
+      maxScale: maxScale ?? this.maxScale,
+      snapToGrid: snapToGrid ?? this.snapToGrid,
+    );
+  }
+
+  /// Value equality keeps painters from repainting when a host rebuilds and
+  /// hands over a freshly constructed but identical theme.
+  List<Object?> get _props => <Object?>[
+    background,
+    gridLine,
+    gridLineMajor,
+    showGrid,
+    gridSpacing,
+    gridMajorEvery,
+    connectionColor,
+    selectedConnectionColor,
+    hoveredConnectionColor,
+    pendingConnectionColor,
+    invalidConnectionColor,
+    connectionWidth,
+    selectedConnectionWidth,
+    connectionCurvature,
+    connectionHitTolerance,
+    connectionArrowSpacing,
+    connectionArrowMaxCount,
+    portColor,
+    portHoverColor,
+    portBorderColor,
+    portRadius,
+    portHitRadius,
+    portMinScale,
+    selectionColor,
+    selectionWidth,
+    selectionRadius,
+    selectionInset,
+    marqueeColor,
+    minScale,
+    maxScale,
+    snapToGrid,
+  ];
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NodeEditorTheme && listEquals(other._props, _props);
+
+  @override
+  int get hashCode => Object.hashAll(_props);
+}
