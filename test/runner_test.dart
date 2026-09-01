@@ -209,6 +209,87 @@ void main() {
       expect(run.trace, <String>['pick', 'yes']);
       expect(controller.runner.stateOf('no'), NodeRunState.idle);
     });
+
+    test('a node is told which control input the flow arrived on', () async {
+      final seen = <String?>[];
+      final controller = controllerWith(
+        <GraphNode>[
+          node('head', 'pick', <NodePort>[
+            controlOut('left'),
+            controlOut('right'),
+          ]),
+          node('both', 'watch', <NodePort>[controlIn('a'), controlIn('b')]),
+        ],
+        <NodeConnection>[
+          wire('1', 'head', 'left', 'both', 'a'),
+          wire('2', 'head', 'right', 'both', 'b'),
+        ],
+        <NodePrototype>[
+          step(
+            'pick',
+            onExecute: (c) async => c.flowAll(<String>['left', 'right']),
+          ),
+          step('watch', onExecute: (c) async => seen.add(c.enteredVia)),
+        ],
+      );
+
+      await controller.runner.run();
+
+      expect(
+        seen,
+        <String?>['a', 'b'],
+        reason:
+            "a loop's continue and break are one node doing opposite things, "
+            'so which wire arrived is the only thing that can tell them apart',
+      );
+    });
+
+    test('a root and a pulled node arrived through nothing', () async {
+      String? atRoot;
+      String? atPulled;
+      final controller = controllerWith(
+        <GraphNode>[
+          node('root', 'root', <NodePort>[controlOut()]),
+          node('value', 'value', <NodePort>[NodePort.output(id: 'v')]),
+          node('sink', 'sink', <NodePort>[
+            controlIn(),
+            NodePort.input(id: 'v'),
+          ]),
+        ],
+        <NodeConnection>[
+          wire('1', 'root', 'out', 'sink', 'in'),
+          wire('2', 'value', 'v', 'sink', 'v'),
+        ],
+        <NodePrototype>[
+          step(
+            'root',
+            onExecute: (c) async {
+              atRoot = c.enteredVia;
+              c.flow('out');
+            },
+          ),
+          step(
+            'value',
+            onExecute: (c) async {
+              atPulled = c.enteredVia;
+              c.emit('v', 1);
+            },
+          ),
+          step('sink'),
+        ],
+      );
+
+      await controller.runner.run();
+
+      expect(atRoot, isNull, reason: 'nothing flowed into the start of a run');
+      expect(
+        atPulled,
+        isNull,
+        reason:
+            'a pulled node was asked what it holds, not sent anywhere; naming '
+            'the port that wanted it would read as a control arrival',
+      );
+    });
   });
 
   group('data flow', () {

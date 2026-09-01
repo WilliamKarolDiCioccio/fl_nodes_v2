@@ -237,20 +237,27 @@ class NodeEditorRunner {
       return;
     }
 
-    final stack = <String>[for (final id in roots.reversed) id];
+    // The port a node is entered through travels with it. A node with two
+    // control inputs has no other way to tell them apart, and some cannot be
+    // written without it — a loop's `continue` and `break` are one node doing
+    // opposite things. A root arrives through nothing, hence the null.
+    final stack = <_Arrival>[
+      for (final id in roots.reversed) (nodeId: id, via: null),
+    ];
     while (stack.isNotEmpty) {
       if (run.stopped) break;
-      final id = stack.removeLast();
-      final flowed = await _step(run, id);
+      final arrival = stack.removeLast();
+      final flowed = await _step(run, arrival.nodeId, arrival.via);
       if (run.error != null || run.stopped) break;
 
       // Depth first: the first port flowed is the first one taken, so a branch
       // runs to its end before its sibling starts. Pushed in reverse for that.
-      final next = <String>[];
+      final next = <_Arrival>[];
       for (final portId in flowed) {
         for (final connection
-            in run.outgoing[PortRef(id, portId)] ?? const <NodeConnection>[]) {
-          next.add(connection.to.nodeId);
+            in run.outgoing[PortRef(arrival.nodeId, portId)] ??
+                const <NodeConnection>[]) {
+          next.add((nodeId: connection.to.nodeId, via: connection.to.portId));
         }
       }
       for (var i = next.length - 1; i >= 0; i--) {
@@ -264,14 +271,14 @@ class NodeEditorRunner {
 
   /// Runs one control node: pulls what it reads, invokes it, reports what it
   /// flowed.
-  Future<List<String>> _step(_RunState run, String nodeId) async {
+  Future<List<String>> _step(_RunState run, String nodeId, String? via) async {
     final plan = run.plans[nodeId];
     if (plan == null) return const <String>[];
 
     await _pullInputs(run, plan, <String>[]);
     if (run.error != null || run.stopped) return const <String>[];
 
-    final step = await _invoke(run, plan);
+    final step = await _invoke(run, plan, via);
     if (step == null) return const <String>[];
 
     run.trace.add(nodeId);
@@ -360,7 +367,9 @@ class NodeEditorRunner {
     pulling.removeLast();
     if (run.error != null || run.stopped) return;
 
-    final step = await _invoke(run, plan);
+    // Null, and not a guess: nothing flowed into this node. It is being
+    // evaluated because something downstream asked what it holds.
+    final step = await _invoke(run, plan, null);
     if (step == null) return;
     // Traced like any other turn: `steps` and `runCounts` count a pull, and a
     // trace that quietly left them out would disagree with both.
@@ -370,7 +379,11 @@ class NodeEditorRunner {
   }
 
   /// Gives [plan] its turn. Null means it did not get one, or did not survive.
-  Future<_Step?> _invoke(_RunState run, _NodePlan plan) async {
+  Future<_Step?> _invoke(
+    _RunState run,
+    _NodePlan plan,
+    String? enteredVia,
+  ) async {
     if (run.steps >= run.maxSteps) {
       run.fail(
         GraphRunException(
@@ -384,7 +397,7 @@ class NodeEditorRunner {
     run.steps++;
     run.setState(plan.node.id, NodeRunState.running);
 
-    final step = _Step(run, plan, run.runCounts[plan.node.id] ?? 0);
+    final step = _Step(run, plan, run.runCounts[plan.node.id] ?? 0, enteredVia);
     try {
       final executor = plan.executor;
       if (executor != null) {
@@ -423,6 +436,9 @@ class NodeEditorRunner {
 }
 
 // ---------------------------------------------------------------- internals
+
+/// A node waiting its turn, and the control input that sent it there.
+typedef _Arrival = ({String nodeId, String? via});
 
 /// Everything about one node that the run needs, worked out once.
 ///
@@ -680,13 +696,16 @@ class _RunState {
 
 /// One node's turn. The state a [NodeExecutionContext] reads and writes.
 class _Step implements NodeExecutionStep {
-  _Step(this._run, this._plan, this.step);
+  _Step(this._run, this._plan, this.step, this.enteredVia);
 
   final _RunState _run;
   final _NodePlan _plan;
 
   @override
   final int step;
+
+  @override
+  final String? enteredVia;
 
   /// Buffered until the turn survives, so a run cancelled mid-await does not
   /// publish the values of the node it was waiting on.

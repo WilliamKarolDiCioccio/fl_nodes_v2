@@ -19,6 +19,9 @@ abstract class NodeExecutionStep {
   /// How many times this node has already run in this pass, starting at zero.
   int get step;
 
+  /// The control input the flow arrived on, or null when it did not arrive.
+  String? get enteredVia;
+
   bool get isCancelled;
 
   /// False once the runner has moved on. See [NodeExecutionContext.emit].
@@ -56,6 +59,18 @@ class NodeExecutionContext {
   ///
   /// Non-zero means the flow has come back around — a loop.
   int get step => _step.step;
+
+  /// The control input this node was entered through, or null.
+  ///
+  /// Null means the flow did not arrive at all: the node was a root of the run,
+  /// or it was pulled because something downstream wanted its value. A node
+  /// reached by two wires at once is not a case this has to answer — each wire
+  /// is a turn of its own, which is what the `reentered` diagnostic is about.
+  ///
+  /// This is the only way a node with more than one control input can behave
+  /// differently on them, and some cannot be written without it: a loop's
+  /// `continue` and `break` are the same node doing opposite things.
+  String? get enteredVia => _step.enteredVia;
 
   /// True once the run has been asked to stop.
   ///

@@ -40,6 +40,14 @@ and height that node should have, and resolution rewrites the node to match.
 - `controller.runner.run()` walks control flow depth-first and pulls data
   inputs on demand, memoised per run against a monotonic stamp.
 - Control flow is a pulse: two branches converging on a node run it twice.
+- `NodeExecutionContext.enteredVia` (null) names the control input the flow
+  arrived on, so a node with more than one can behave differently on each. Some
+  cannot be written without it — a loop's `continue` and `break` are one node
+  doing opposite things, and the runner previously pushed only the destination
+  node id and dropped the port. Null means nothing flowed in: the node was a
+  root of the run, or it was pulled because something wanted its value. Pinned
+  by `runner_test.dart`'s "a node is told which control input the flow arrived
+  on" and "a root and a pulled node arrived through nothing".
 - Runtime values live in a run-scoped map. Execution never touches the
   document, never bumps `revision` and never marks the project dirty.
 - Returns a `GraphRun` — trace, values, diagnostics, failure — rather than
