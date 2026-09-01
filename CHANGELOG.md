@@ -61,6 +61,12 @@ and height that node should have, and resolution rewrites the node to match.
   inherit the app's `MenuTheme`. Entries are data, and a build hook hands hosts
   the defaults to filter rather than a blank sheet.
 - The secondary button never drives a drag — it opens menus and nothing else.
+- A tap on the canvas takes focus, so selecting a wire and pressing Delete
+  removes it. A tap is not a drag, so the scale recogniser never starts, and
+  nothing else on that path claimed focus — which mattered more than a shortcut
+  going unheard: the key event went to whatever the *host* had focused instead,
+  and an editor embedded beside a file tree could answer Delete by deleting a
+  file. Pinned by `test/canvas_focus_test.dart`.
 - Optional drop-to-create: a wire let go on empty canvas offers the Create menu
   there and wires up what it makes, in one undo step.
 - Comments, as free-standing notes sharing the nodes' paint order.

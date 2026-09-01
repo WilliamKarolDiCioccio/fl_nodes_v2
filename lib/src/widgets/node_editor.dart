@@ -565,6 +565,12 @@ class NodeEditorState extends State<NodeEditor> {
   }
 
   void _handleCanvasTapUp(TapUpDetails details) {
+    // A tap is not a drag, so `_handleScaleStart` never runs for one and
+    // nothing else on this path would take focus. Without this, clicking a
+    // connection selects it and then Delete does nothing — or worse, reaches
+    // whatever the host had focused before and deletes something else.
+    _focusNode.requestFocus();
+
     // Before the curve test: a caption sits on its curve's midpoint, so the
     // curve would otherwise swallow every tap meant for the text.
     final caption = _editableCaptionAt(details.localPosition);
