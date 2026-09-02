@@ -48,7 +48,7 @@ class NodeEditorLayout {
     _controller._notify();
   }
 
-  /// Nodes in paint order: selected ones last so they float above the rest.
+  /// Nodes in paint order: raised ones last so they float above the rest.
   List<GraphNode> get nodesInPaintOrder =>
       _inPaintOrder(_controller._graph.nodes.values.toList(growable: false));
 
@@ -73,11 +73,14 @@ class NodeEditorLayout {
 
   /// The topmost node containing [scenePoint], matching paint order.
   GraphNode? nodeAt(Offset scenePoint) {
+    final raised = _raised;
     GraphNode? best;
     for (final id in _index.queryPoint(scenePoint)) {
       final node = _controller._graph.nodes[id];
       if (node == null) continue;
-      if (best == null || _paintRank(node) >= _paintRank(best)) best = node;
+      if (best == null || _rank(node, raised) >= _rank(best, raised)) {
+        best = node;
+      }
     }
     return best;
   }
@@ -167,10 +170,27 @@ class NodeEditorLayout {
   }
 
   List<GraphNode> _inPaintOrder(List<GraphNode> nodes) {
-    nodes.sort((a, b) => _paintRank(a) - _paintRank(b));
+    // Asked once rather than inside the comparator: with a group selected the
+    // expansion allocates, and a sort would build it O(n log n) times.
+    final raised = _raised;
+    nodes.sort((a, b) => _rank(a, raised) - _rank(b, raised));
     return nodes;
   }
 
-  int _paintRank(GraphNode node) =>
-      _controller.selection.containsNode(node.id) ? 1 : 0;
+  /// The nodes that float above the rest: what is selected, **plus every
+  /// member of every selected group**.
+  ///
+  /// Selecting a group still does not select its nodes — this is the same
+  /// expansion delete, cut, copy and drag already act through. Paint order is
+  /// the one place the distinction would be actively unhelpful: a frame is
+  /// picked up by its handle and moved as a unit, and a group that stayed
+  /// underneath whatever it was dragged over has to be moved somewhere else
+  /// before you can click what it is now covering.
+  ///
+  /// Costs nothing when no group is selected: [NodeEditorSelection.nodeIds] is
+  /// a cached snapshot and the expansion returns it unchanged.
+  Set<String> get _raised => _controller.selection.nodeIdsWithGroups;
+
+  static int _rank(GraphNode node, Set<String> raised) =>
+      raised.contains(node.id) ? 1 : 0;
 }

@@ -225,6 +225,17 @@ culled list, each frame is bucketed under the lowest rank among its members,
 and buckets are emitted before the node at that index. A frame with no drawn
 member falls to bucket 0 — nothing of its own is on screen to be above.
 
+**A selected group floats, and so does everything in it.** `layout` ranks a
+node by `selection.nodeIdsWithGroups` rather than by `containsNode`, so
+selecting or dragging a frame lifts its members over whatever they were under —
+and the frame follows them up for free, being bucketed beneath its
+lowest-ranked member. Without that a group dragged onto other nodes disappears
+under them and has to be moved somewhere else before you can click what it is
+now covering. The expansion is asked for **once per sort** rather than inside
+the comparator: with a group selected it allocates, and a comparator would
+build it O(n log n) times. `nodeAt` ranks the same way, or what is drawn on top
+is not what a click lands on.
+
 **The frame is `IgnorePointer` and the handle is not.** That one line is what
 makes "clicking a node does the usual thing" true without a single case in the
 node path, and it is why the marquee still works over a group.
@@ -237,8 +248,8 @@ way `_NodeViewState` does. This was caught by the colour-menu test failing to
 open the menu at all.
 
 Selecting a group deliberately does **not** select its nodes.
-`selection.nodeIdsWithGroups` is the expansion, and only delete, cut, copy and
-drag use it. `selectAll` leaves groups out on purpose — including them would
+`selection.nodeIdsWithGroups` is the expansion, used by delete, cut, copy, drag
+and paint order — and by nothing else. `selectAll` leaves groups out on purpose — including them would
 delete each group's contents twice, once through the nodes and once through the
 frame.
 

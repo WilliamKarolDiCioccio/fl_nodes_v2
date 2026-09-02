@@ -476,6 +476,90 @@ void main() {
       expect(controller.selection.groupIds, isEmpty);
     });
 
+    /// A stranger lying across a group's member, so paint order is the only
+    /// thing deciding which of the two you can click.
+    NodeGraph overlapping() => NodeGraph(
+      nodes: <GraphNode>[
+        node('a', const Offset(100, 100)),
+        node('b', const Offset(400, 100)),
+        node('over', const Offset(140, 130)),
+      ],
+    ).putGroup(const NodeGroup(id: 'g', nodeIds: <String>{'a', 'b'}));
+
+    /// The node layer's children, in the order they are painted. Every one of
+    /// them is keyed by its node id, or by `group:` and the group's.
+    List<String> painted(WidgetTester tester) => tester
+        .widgetList<Positioned>(find.byType(Positioned))
+        .map((positioned) => positioned.key)
+        .whereType<ValueKey<String>>()
+        .map((key) => key.value)
+        .toList();
+
+    testWidgets('selecting a group floats it and its members to the front', (
+      tester,
+    ) async {
+      final controller = await pump(tester, graph: overlapping());
+      expect(controller.layout.nodeAt(const Offset(200, 160)), isNotNull);
+
+      controller.selection.selectGroup('g');
+      await tester.pumpAndSettle();
+
+      final order = painted(tester);
+      expect(
+        order.indexOf('over'),
+        lessThan(order.indexOf('group:g')),
+        reason: 'the frame and everything in it came up over the stranger',
+      );
+      expect(order.indexOf('group:g'), lessThan(order.indexOf('a')));
+      expect(order.indexOf('group:g'), lessThan(order.indexOf('b')));
+
+      expect(
+        controller.layout.nodeAt(const Offset(200, 160))?.id,
+        'a',
+        reason:
+            'what is on top is what a click lands on, or the frame has to be '
+            'dragged somewhere else before you can reach what it covers',
+      );
+    });
+
+    testWidgets('dragging the handle brings the group forward', (tester) async {
+      final controller = await pump(tester, graph: overlapping());
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.drag_indicator)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.moveBy(const Offset(4, 4));
+      await tester.pumpAndSettle();
+
+      final order = painted(tester);
+      expect(order.indexOf('over'), lessThan(order.indexOf('a')));
+      expect(order.indexOf('over'), lessThan(order.indexOf('b')));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(controller.selection.groupIds, <String>{'g'});
+    });
+
+    testWidgets('an unselected group outranks nothing', (tester) async {
+      final controller = await pump(tester, graph: overlapping());
+
+      controller.selection.selectNode('over');
+      await tester.pumpAndSettle();
+
+      final order = painted(tester);
+      expect(
+        order.last,
+        'over',
+        reason:
+            'a group is raised because it is selected, not because it is a '
+            'group — otherwise a frame would sit over the node you just '
+            'clicked',
+      );
+      expect(controller.layout.nodeAt(const Offset(200, 160))?.id, 'over');
+    });
+
     testWidgets('right-clicking the handle offers Disband', (tester) async {
       final controller = await pump(tester);
       controller.selection.selectNodes(<String>['a', 'b']);

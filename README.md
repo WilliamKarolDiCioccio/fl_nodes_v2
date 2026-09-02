@@ -394,7 +394,7 @@ handle, in the frame's top-left.
 | --- | --- |
 | `Ctrl+G` on nodes | Frame them |
 | `Ctrl+G` on a group plus ungrouped nodes | Widen that frame |
-| Drag the handle | Move every member, in one undo step |
+| Drag the handle | Move every member, in one undo step — the frame and its contents come to the front |
 | Click the handle | Select the group — not its nodes |
 | Double-click the handle | Rename |
 | Handle dropdown | Recolour from `NodeGroup.palette`, or back to neutral |

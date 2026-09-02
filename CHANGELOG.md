@@ -110,6 +110,17 @@ and height that node should have, and resolution rewrites the node to match.
 - `selection.groupIds` sits beside `nodeIds` and `connectionIds`;
   `selection.nodeIdsWithGroups` is what acting on the selection means once a
   frame can be in it.
+- **A selected group floats to the front, its members with it.** Paint order
+  ranks a node through `nodeIdsWithGroups` rather than through the selection
+  alone, so picking a frame up lifts everything in it over whatever it was
+  under — and the frame follows, being bucketed beneath its lowest-ranked
+  member. Without it a group dragged across other nodes vanishes underneath
+  them and has to be moved somewhere else before you can reach what it is now
+  covering. `NodeEditorLayout.nodeAt` ranks the same way, or what is drawn on
+  top is not what a click lands on. Pinned by `group_test.dart`'s "selecting a
+  group floats it and its members to the front" and "dragging the handle brings
+  the group forward"; "an unselected group outranks nothing" is the guard that
+  keeps a frame from sitting over the node you just clicked.
 
 ### Minimap
 
