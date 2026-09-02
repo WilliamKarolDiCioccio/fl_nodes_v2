@@ -72,8 +72,15 @@ void main() {
     expect(find.text('Composing the reply'), findsOneWidget);
 
     final before = controller.graph.nodes['compose']!.position;
+    // Scoped to the group: the minimap's own bar carries the same grip glyph,
+    // deliberately, because both are the same affordance.
     final gesture = await tester.startGesture(
-      tester.getCenter(find.byIcon(Icons.drag_indicator)),
+      tester.getCenter(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('group:reply')),
+          matching: find.byIcon(Icons.drag_indicator),
+        ),
+      ),
       kind: PointerDeviceKind.mouse,
     );
     await tester.pump(const Duration(milliseconds: 16));

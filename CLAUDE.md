@@ -252,6 +252,82 @@ connection selection; adding a third set made it visible, because widening a
 group stopped working. `_apply` copies all three before clearing anything, and
 `controller_test.dart` pins it.
 
+## Minimap
+
+A readout, and everything about it follows from that. Nothing in the panel
+moves the camera, so the drag is free to mean "move the panel" — which is the
+gesture that matters, since a panel you cannot move sits on top of the graph
+you are editing. It also means the minimap never calls the controller, never
+bumps `revision`, and therefore cannot pull a node body back into the rebuild.
+`rebuild_isolation_test.dart` re-runs its three numbers with the panel drawn.
+
+Two caches, and they are the whole performance story:
+
+- **`_MinimapSlot`** in `node_editor.dart` caches the panel's widget instance
+  exactly as `_NodeSlot` caches a node's. `onMenuClosed` is a **held tear-off**
+  (`_requestCanvasFocus`), never `() => _focusNode.requestFocus()` read per
+  build — a closure is the one input that cannot compare equal to the last one,
+  which is the same trap `_commentBuilder` documents.
+- **`MinimapPainter` takes a `repaint` listenable**, the only painter here that
+  does. It can because every input it reads is on a `ChangeNotifier`; the four
+  canvas painters cannot, because theirs include `NodeEditorState` fields — the
+  hovered port, the marquee, the pending wire — that only a rebuild delivers.
+  Together the two mean a scroll tick repaints one layer and rebuilds nothing.
+  Do not "tidy" the `repaint` away.
+
+`MinimapScene` is keyed on `revision` the way `ConnectionLayout` is, and holds
+**scene**-space rects: map space depends on the panel size and the zoom cap,
+both of which move without the graph moving. Colours are re-derived every pass
+regardless, because a node's colour comes from the selection and from its
+group and the selection changes without `revision` moving — the same shape as
+the caption bug `ConnectionLayout` records.
+
+**The three guards live on the editor, not on the panel.** `MouseRegion.opaque`
+and `HitTestBehavior.opaque` stop *siblings lower in the stack*; they do not
+stop **ancestors**, and every annotation along the hit-test path still gets its
+callback. The `Listener` and `MouseRegion` wrapping the canvas are both
+ancestors of the panel, so `_handlePointerSignal`, `_handlePanZoom*` and
+`_handleHover` each ask `_overMinimap` first — otherwise a scroll over the
+panel zooms the canvas underneath it and a hover across it picks ports it is
+not showing. The rect is reported *by* the panel rather than recomputed, since
+resolving it means knowing the alignment default and the clamp, and two copies
+of that arithmetic is how a guard stops guarding.
+
+**The action bar carries no tap recogniser at all**, and that is deliberate.
+`GroupView._Handle` had to synthesise its own double tap because it needed
+`onTap` *and* a nested menu, and a `DoubleTapGestureRecognizer` in the arena
+holds every tap until the timeout. The bar needs neither, so nothing competes
+with the gear. Adding "double-click the bar to fold it" reintroduces the bug
+the colour-menu test caught.
+
+**The shade is four rects, and they are slices rather than insets.** Top and
+bottom run the full width; the sides run only between them, so the complement
+is covered exactly once. Four inset rects overlap at the corners, and the wash
+is translucent, so overlapping bands composite twice and show as a darker cross
+through the panel — a bug that looks like a rendering artefact and is
+arithmetic. The runner-up was one even-odd `Path`: one draw call, but a `Path`
+allocated on a repaint that happens on every scroll tick. `Path.combine` is the
+one to avoid outright.
+
+**Position is clamped at read time and never written back.** Writing during
+build would notify mid-build, and leaving the stored value alone means a window
+narrowed and widened again puts the panel back where it was put. A null
+position means "still where `MinimapConfig.alignment` put it", which is what
+keeps an untouched panel in its corner across a resize rather than stranding it
+mid-canvas.
+
+The map fits **content**, so a camera panned far into empty canvas leaves the
+viewport marker off the map and the panel washes over entirely. That is honest
+— you are looking at nothing — and the zoom cap gives it slack in practice,
+since a capped map has empty margin around the content. The alternative is
+fitting the union of the content and the visible rect, which keeps the marker
+on the map at the cost of rescaling everything as you pan past the edge.
+
+There is no cull: the whole graph is on the map by definition, so a camera tick
+is O(nodes) in the painter. If that ever bites, the escape hatch is caching the
+per-colour *map*-space paths keyed on `(revision, selection.revision,
+projection)` — measure with `benchmark/widget_benchmark.dart` first.
+
 ## Serialisation
 
 Ports and declared fields are derived and could be dropped from a document,

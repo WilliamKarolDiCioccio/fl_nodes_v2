@@ -98,6 +98,12 @@ export 'src/menus/node_editor_menus.dart'
         NodeMenuRequest,
         NodeMenuTarget;
 export 'src/menus/node_menu_entry.dart' show NodeMenuEntry;
+export 'src/minimap/minimap_config.dart' show MinimapConfig, MinimapNodeColor;
+export 'src/minimap/minimap_controller.dart' show MinimapController;
+export 'src/minimap/minimap_painter.dart' show MinimapPainter;
+export 'src/minimap/minimap_projection.dart'
+    show MinimapProjection, minimapNodeColor, minimapShadeBands;
+export 'src/minimap/minimap_scene.dart' show MinimapScene;
 export 'src/painting/connection_label.dart'
     show ConnectionCaption, ConnectionLabel;
 export 'src/painting/connection_layout.dart'

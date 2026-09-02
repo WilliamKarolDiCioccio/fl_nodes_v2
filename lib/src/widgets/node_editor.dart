@@ -22,6 +22,9 @@ import '../painting/overlay_painter.dart';
 import '../painting/ports_painter.dart';
 import '../menus/node_editor_menu_host.dart';
 import '../menus/node_editor_menus.dart';
+import '../minimap/minimap_config.dart';
+import '../minimap/minimap_controller.dart';
+import '../minimap/minimap_panel.dart';
 import 'node_description_dialog.dart';
 import '../theme/node_editor_theme.dart';
 import 'comment_view.dart';
@@ -79,6 +82,8 @@ class NodeEditor extends StatefulWidget {
     this.onPortSecondaryTap,
     this.onConnectionSecondaryTap,
     this.contextMenus = const NodeEditorMenus(),
+    this.minimap,
+    this.minimapController,
   });
 
   final NodeEditorController controller;
@@ -138,6 +143,21 @@ class NodeEditor extends StatefulWidget {
   /// that already had its own menu keeps it and does not get two.
   final NodeEditorMenus? contextMenus;
 
+  /// The minimap panel, or null for none.
+  ///
+  /// Off by default, unlike [contextMenus]: a right-click already means a
+  /// menu, where a panel sitting over the canvas is a thing a host has to ask
+  /// for. `minimap: const MinimapConfig()` is the whole opt-in.
+  final MinimapConfig? minimap;
+
+  /// Where the panel's own state lives — its placement, its size, whether it
+  /// is folded, and what it draws.
+  ///
+  /// The editor makes one when this is null. Supply one to persist the
+  /// placement across sessions, or to drive the panel from elsewhere; a
+  /// supplied controller is the host's to dispose.
+  final MinimapController? minimapController;
+
   @override
   State<NodeEditor> createState() => NodeEditorState();
 }
@@ -169,6 +189,39 @@ class NodeEditorState extends State<NodeEditor> {
     GraphNode node,
     NodeRenderState _,
   ) => CommentView(node: node, controller: _controller);
+
+  /// Held for the same reason [_commentBuilder] is: [_MinimapSlot] compares
+  /// its inputs by identity, and a closure built per frame is the one input
+  /// that can never compare equal to the last one.
+  late final VoidCallback _requestCanvasFocus = _focusNode.requestFocus;
+
+  /// Made only when the host supplies none, and disposed only if made here.
+  MinimapController? _ownedMinimap;
+
+  MinimapController get _minimap =>
+      widget.minimapController ?? (_ownedMinimap ??= MinimapController());
+
+  final _MinimapSlot _minimapSlot = _MinimapSlot();
+
+  /// Where the minimap panel currently is, in canvas-local coordinates.
+  ///
+  /// Reported by the panel rather than recomputed here, because resolving it
+  /// means knowing the config's alignment and the clamp — and two copies of
+  /// that arithmetic is how a guard stops guarding.
+  Rect? _minimapRect;
+
+  void _setMinimapRect(Rect rect) => _minimapRect = rect;
+
+  /// True where a pointer at [localPosition] is over the minimap.
+  ///
+  /// [MouseRegion.opaque] and [HitTestBehavior.opaque] stop *siblings lower in
+  /// the stack*; they do not stop **ancestors**, and every annotation along
+  /// the hit-test path still gets its callback. The [Listener] and
+  /// [MouseRegion] wrapping this canvas are both ancestors of the panel, so
+  /// the panel cannot shadow them and the editor has to ask.
+  bool _overMinimap(Offset localPosition) =>
+      widget.minimap != null &&
+      (_minimapRect?.contains(localPosition) ?? false);
 
   NodeEditorTheme? _resolvedTheme;
 
@@ -276,6 +329,12 @@ class NodeEditorState extends State<NodeEditor> {
       _connectedPortsCache = const <String, Set<String>>{};
       _connections.invalidate();
     }
+    // A host that has started supplying its own leaves ours with nothing to
+    // do; one that has stopped gets a fresh one on the next read.
+    if (widget.minimapController != null && _ownedMinimap != null) {
+      _ownedMinimap!.dispose();
+      _ownedMinimap = null;
+    }
   }
 
   /// Cached so painters can compare themes by identity and skip repaints.
@@ -299,6 +358,8 @@ class NodeEditorState extends State<NodeEditor> {
   void dispose() {
     _gridShader?.dispose();
     _focusNode.dispose();
+    // Only ever the one made here: a host's controller outlives its editor.
+    _ownedMinimap?.dispose();
     super.dispose();
   }
 
@@ -594,6 +655,8 @@ class NodeEditorState extends State<NodeEditor> {
 
   void _handlePointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
+    // Scrolling over the panel must not zoom the canvas underneath it.
+    if (_overMinimap(event.localPosition)) return;
     GestureBinding.instance.pointerSignalResolver.register(event, (resolved) {
       final scroll = resolved as PointerScrollEvent;
       if (HardwareKeyboard.instance.isShiftPressed) {
@@ -606,11 +669,13 @@ class NodeEditorState extends State<NodeEditor> {
   }
 
   void _handlePanZoomStart(PointerPanZoomStartEvent event) {
+    if (_overMinimap(event.localPosition)) return;
     _panZoomStartScale = _viewport.scale;
     _panZoomLastPan = Offset.zero;
   }
 
   void _handlePanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    if (_overMinimap(event.localPosition)) return;
     _controller.camera.panBy(event.pan - _panZoomLastPan);
     _panZoomLastPan = event.pan;
     if (event.scale != 1.0) {
@@ -623,6 +688,9 @@ class NodeEditorState extends State<NodeEditor> {
 
   void _handleHover(PointerHoverEvent event) {
     if (_pendingSource != null || _canvasGesture != _CanvasGesture.none) return;
+    // Otherwise moving across the panel highlights ports and wires beneath it,
+    // and changes the cursor over a panel that is not showing them.
+    if (_overMinimap(event.localPosition)) return;
     final scene = _viewport.toScene(event.localPosition);
 
     // A painted handle has no MouseRegion of its own, so its hover state is
@@ -1170,6 +1238,11 @@ class NodeEditorState extends State<NodeEditor> {
   @visibleForTesting
   int get debugTrackedNodeCount => _slots.length;
 
+  /// The cached minimap panel, for the isolation test: a pan must hand back
+  /// the identical widget, or the panel's chrome is being rebuilt every frame.
+  @visibleForTesting
+  Object? get debugMinimapPanel => _minimapSlot.view;
+
   /// Frames the whole graph in the current viewport.
   ///
   /// Auto-height nodes only report their real size after a layout pass, so
@@ -1348,6 +1421,12 @@ class NodeEditorState extends State<NodeEditor> {
                   // and the menu takes it while it is open.
                   onClosed: _focusNode.requestFocus,
                 ),
+                // After the menu host, because a Stack hit-tests back to
+                // front and the panel wants its presses. Costs nothing to be
+                // last: that host is a zero-sized anchor whose menu renders in
+                // the route overlay, above every layer regardless of order.
+                if (widget.minimap case final MinimapConfig minimap)
+                  _minimapSlot.build(this, minimap, size),
               ],
             ),
           ),
@@ -1618,6 +1697,56 @@ class _NodeSlot {
         onDragUpdate: _editor._handleNodeDragUpdate,
         onDragEnd: _editor._handleNodeDragEnd,
       ),
+    );
+  }
+}
+
+/// Caches the minimap panel's widget instance, exactly as [_NodeSlot] caches a
+/// node's and for the same reason.
+///
+/// The editor rebuilds its whole canvas on every controller notification —
+/// which includes every camera tick. Handing back the *identical*
+/// [MinimapPanel] makes `Element.updateChild` short-circuit, so the panel's
+/// chrome is not rebuilt while you scroll. The map still repaints: its painter
+/// takes a `repaint` listenable, which is the other half of the arrangement.
+class _MinimapSlot {
+  MinimapConfig? _config;
+  MinimapController? _minimap;
+  NodeEditorTheme? _theme;
+  Size? _viewportSize;
+  Widget? _view;
+
+  Widget? get view => _view;
+
+  Widget build(NodeEditorState editor, MinimapConfig config, Size viewport) {
+    final minimap = editor._minimap;
+    final theme = editor._theme;
+
+    final cached = _view;
+    if (cached != null &&
+        _config == config &&
+        identical(_minimap, minimap) &&
+        identical(_theme, theme) &&
+        _viewportSize == viewport) {
+      return cached;
+    }
+
+    _config = config;
+    _minimap = minimap;
+    _theme = theme;
+    _viewportSize = viewport;
+
+    return _view = MinimapPanel(
+      key: const ValueKey<String>('minimap'),
+      controller: editor._controller,
+      minimap: minimap,
+      config: config,
+      theme: theme,
+      connections: editor._connections,
+      viewportSize: viewport,
+      // The held tear-off, never a closure read per build.
+      onMenuClosed: editor._requestCanvasFocus,
+      onRectChanged: editor._setMinimapRect,
     );
   }
 }

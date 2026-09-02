@@ -82,6 +82,11 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
 
   /// Off by default: a wire let go by accident should cost nothing.
   bool _createOnDrop = false;
+  bool _showMinimap = true;
+
+  /// Owned here rather than left to the editor, so the panel comes back where
+  /// it was left when the minimap is switched off and on again.
+  final MinimapController _minimap = MinimapController();
   CanvasDragBehavior _dragBehavior = CanvasDragBehavior.marquee;
 
   @override
@@ -126,6 +131,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _minimap.dispose();
     super.dispose();
   }
 
@@ -341,6 +347,8 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
               : '$error',
         ),
       ),
+      minimap: _showMinimap ? const MinimapConfig() : null,
+      minimapController: _minimap,
       onNodeDoubleTap: _renameNode,
     );
   }
@@ -580,6 +588,12 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
               tooltip: 'Dropping a wire on empty canvas offers a new node',
               value: _createOnDrop,
               onChanged: (value) => setState(() => _createOnDrop = value),
+            ),
+            _Toggle(
+              icon: Icons.map_outlined,
+              tooltip: 'Show the minimap',
+              value: _showMinimap,
+              onChanged: (value) => setState(() => _showMinimap = value),
             ),
             _Toggle(
               icon: Icons.pan_tool_outlined,

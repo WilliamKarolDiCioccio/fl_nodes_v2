@@ -111,6 +111,67 @@ and height that node should have, and resolution rewrites the node to match.
   `selection.nodeIdsWithGroups` is what acting on the selection means once a
   frame can be in it.
 
+### Minimap
+
+- **`NodeEditor.minimap`** (null) draws a minimap panel over the canvas, as the
+  last child of the editor's own `Stack` rather than something a host positions
+  itself: it has to paint above the node layer and take presses the marquee
+  must never see, and a host solving that twice would solve it differently the
+  second time. Off by default, unlike `contextMenus` — a right-click already
+  means a menu, where a panel sitting over the canvas is a thing you ask for.
+  `minimap: const MinimapConfig()` is the whole opt-in. Pinned by
+  `minimap_test.dart`'s "there is no panel unless the host asks for one".
+- **It is a readout and nothing else.** No click-to-jump and no drag-to-pan:
+  the drag belongs to the *panel*, so it can be moved off whatever you are
+  working on, and a panel you cannot move is a panel sitting on top of your
+  graph. That is also what makes it free — it never calls
+  `NodeEditorController`, so it can never bump `revision`, and dragging,
+  resizing or folding it rebuilds no node body at all. Pinned by
+  `rebuild_isolation_test.dart`'s "dragging the panel rebuilds no node bodies
+  at all" and the three numbers of the isolation table re-run with it drawn.
+- **`MinimapController`** (`size` 240x160, `maxScale` 0.2, `idleOpacity` 0.28)
+  holds everything the app user can change, so a host can persist the placement
+  into its own document; the editor makes one when given none and disposes only
+  the one it made. The defaults live there rather than on `MinimapConfig`
+  because two homes for one default is how a setting somebody restored gets
+  silently overwritten by a config seed on the next launch.
+- The map fits the whole document, **capped** by
+  `MinimapController.maxScale` — without it three nodes fitted to the panel render as three enormous
+  slabs and the map says nothing about shape. The cap can only ever bind
+  *downward*: fitting takes the smaller of the two, so capping leaves slack on
+  both axes and can never push content off the map. There is deliberately no
+  matching floor, since a five-thousand-node graph legitimately needs 0.001.
+  Pinned by "the zoom cap stops a small graph filling the map" and "the cap can
+  never push content off the map".
+- Everything outside the viewport is washed over with **four rects rather than
+  a difference path**. The wash is translucent, so bands that overlap
+  composite twice and show as a darker cross through the panel; `minimapShadeBands`
+  slices the complement so it is covered exactly once, with no `Path` allocated
+  on a repaint that happens on every scroll tick. Pinned by "the bands tile the
+  map around the viewport and never overlap".
+- A node takes its **group's** colour, a note the note grey, a selected node the
+  theme's selection colour, and a host may override the lot with
+  `MinimapConfig.nodeColor` — the package has no per-node colour by design, so
+  that callback is the same seam `nodeBuilder` is. Selection outranks the host:
+  otherwise a selected node is indistinguishable from an unselected one of the
+  same type, on the one panel whose job is telling you where you are. Pinned by
+  "the selection outranks the host, which outranks the group".
+- The **close button minimises rather than closing**, folding the panel to its
+  action bar; the same button restores it. With the minimap opt-in there is
+  nothing else that would bring it back. Pinned by "the close button minimises
+  rather than closing".
+- `MinimapPainter` is the only painter in the package taking a `repaint`
+  listenable, because it is the only one that can: every input it reads is on a
+  `ChangeNotifier`, where the four canvas painters depend on editor state only
+  a rebuild can deliver. Together with the panel's cached widget instance, a
+  scroll tick repaints one layer and rebuilds no widget. Pinned by "the panel
+  widget survives a pan".
+- Scrolling, trackpad panning and hovering **over** the panel no longer reach
+  the canvas underneath. An opaque `MouseRegion` stops siblings, not ancestors,
+  and the editor's pointer plumbing is entirely ancestral — so the guard is on
+  the editor rather than on the panel. Pinned by "scrolling over the panel does
+  not zoom the canvas" and "hovering the panel does not pick a port beneath it".
+
 ### Rendering
 
 - Connections, ports, grid and overlays are painted, not built. Level of detail

@@ -411,6 +411,53 @@ the user was not looking at.
 `selection.nodeIdsWithGroups` is what "act on the selection" means once a frame
 can be in it.
 
+### Minimap
+
+An optional panel over the canvas showing the whole document small, with
+everything outside the current view washed grey. Off by default:
+
+```dart
+NodeEditor(
+  controller: controller,
+  nodeBuilder: buildCard,
+  minimap: const MinimapConfig(),
+)
+```
+
+**It is a readout and never moves the camera.** The drag belongs to the panel
+instead, so it can be pushed off whatever you are working on — a minimap you
+cannot move is a minimap sitting on top of your graph. That also makes it
+cheap: it never touches the controller, so nothing it does rebuilds a node.
+
+| Action | |
+| --- | --- |
+| Drag the action bar | Move the panel |
+| Drag the corner grip | Resize it |
+| Gear | Zoom cap, size, what is drawn, idle opacity |
+| ✕ | Fold to the bar; the same button unfolds it |
+
+The map fits the whole document, capped by `MinimapController.maxScale` (0.2)
+so a three-node graph does not render as three enormous slabs. The cap only
+ever binds downward, so it can never push content off the map.
+
+Nodes take their group's colour, notes the note grey and selected nodes the
+theme's selection colour. The package has no per-node colour by design, so a
+host that colours by its own node vocabulary supplies one:
+
+```dart
+MinimapConfig(
+  nodeColor: (node) => switch (node.type) {
+    'trigger' => const Color(0xFF5BC48A),
+    'output' => const Color(0xFFB57BD8),
+    _ => null, // fall back to the group, or to the neutral
+  },
+)
+```
+
+The panel's placement, size, folded state and settings live on a
+`MinimapController`. The editor makes one when you supply none; own one to
+persist where the panel was left.
+
 ### Context menus
 
 Right-click a node, a port, a wire or the canvas. Menus are built from
@@ -571,18 +618,18 @@ without pumping a widget.
 | Layer | Types | Depends on Flutter? |
 | --- | --- | --- |
 | Model | `NodeGraph`, `GraphNode`, `NodePort`, `NodeConnection`, `NodeGroup`, `PortRef` | geometry only |
-| Geometry | `ViewportTransform`, `NodeGeometry`, `ConnectionPath`, `ConnectionRouter` | geometry only |
+| Geometry | `ViewportTransform`, `NodeGeometry`, `ConnectionPath`, `ConnectionRouter`, `MinimapProjection` | geometry only |
 | Prototype | `NodePrototype`, `PortFamily`, `FieldFamily`, `NodePrototypeRegistry` | geometry only |
 | Serialisation | `NodeGraphCodec`, `GraphDocument`, `PayloadCodecs` | geometry only |
-| Controller | `NodeEditorController` and its subsystems, `SpatialHashGrid` | `ChangeNotifier` |
-| View | `NodeEditor`, `NodeView`, `ConnectionLayout`, painters, `NodeEditorTheme` | yes |
+| Controller | `NodeEditorController` and its subsystems, `SpatialHashGrid`, `MinimapController` | `ChangeNotifier` |
+| View | `NodeEditor`, `NodeView`, `ConnectionLayout`, painters, `NodeEditorTheme`, `MinimapConfig` | yes |
 
 ## Example
 
 `example/` is a workflow editor covering every feature: seven node types, a form
 node built from real Flutter inputs, derived ports, link captions, an inspector
-panel, comments, groups, JSON save and load, execution, and stress graphs up to
-5000 nodes.
+panel, comments, groups, the minimap, JSON save and load, execution, and stress
+graphs up to 5000 nodes.
 
 ```sh
 cd example && flutter run

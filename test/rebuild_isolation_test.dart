@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fl_nodes_v2/fl_nodes_v2.dart';
@@ -41,13 +42,20 @@ void main() {
     ),
   );
 
-  Future<NodeEditorController> boot(WidgetTester tester) async {
+  Future<NodeEditorController> boot(
+    WidgetTester tester, {
+    MinimapConfig? minimap,
+  }) async {
     final controller = build4();
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: NodeEditor(controller: controller, nodeBuilder: body),
+          body: NodeEditor(
+            controller: controller,
+            nodeBuilder: body,
+            minimap: minimap,
+          ),
         ),
       ),
     );
@@ -195,5 +203,100 @@ void main() {
           'per-node state has to be dropped with the node, or a long '
           'session over a big graph accumulates one entry per node ever seen',
     );
+  });
+
+  group('with the minimap on', () {
+    // The panel is a sibling in the canvas stack, and a readout: it never
+    // calls the controller, so it can never bump the revision and can never
+    // make a node slot look changed. These re-run the three numbers in the
+    // table in CLAUDE.md with it drawn.
+    testWidgets('panning still rebuilds no node bodies at all', (tester) async {
+      final controller = await boot(tester, minimap: const MinimapConfig());
+
+      for (var i = 0; i < 5; i++) {
+        controller.camera.panBy(const Offset(3, 2));
+        await tester.pump();
+      }
+
+      expect(builds, isEmpty);
+    });
+
+    testWidgets('dragging a node still rebuilds only that node', (
+      tester,
+    ) async {
+      await boot(tester, minimap: const MinimapConfig());
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey<String>('a'))),
+      );
+      for (var i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(4, 3));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(rebuilt(), <String>{'a'});
+    });
+
+    testWidgets('a selection change still rebuilds only the two nodes', (
+      tester,
+    ) async {
+      final controller = await boot(tester, minimap: const MinimapConfig());
+
+      controller.selection.selectNode('a');
+      await tester.pump();
+      builds.clear();
+      controller.selection.selectNode('c');
+      await tester.pump();
+
+      expect(rebuilt(), <String>{'a', 'c'});
+    });
+
+    testWidgets('dragging the panel rebuilds no node bodies at all', (
+      tester,
+    ) async {
+      await boot(tester, minimap: const MinimapConfig());
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.drag_indicator)),
+        kind: PointerDeviceKind.mouse,
+      );
+      for (var i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(-6, -4));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        builds,
+        isEmpty,
+        reason:
+            'the panel writes to its own controller, so the editor is not '
+            'notified and its canvas is not rebuilt',
+      );
+    });
+
+    testWidgets('the panel widget survives a pan', (tester) async {
+      final controller = await boot(tester, minimap: const MinimapConfig());
+      final editor = tester.state<NodeEditorState>(find.byType(NodeEditor));
+      final before = editor.debugMinimapPanel;
+      expect(before, isNotNull);
+
+      for (var i = 0; i < 5; i++) {
+        controller.camera.panBy(const Offset(3, 2));
+        await tester.pump();
+      }
+
+      expect(
+        identical(editor.debugMinimapPanel, before),
+        isTrue,
+        reason:
+            'the map repaints through its painter\'s listenable; handing back '
+            'a fresh widget would rebuild the bar, the menu and the grip on '
+            'every scroll tick instead',
+      );
+    });
   });
 }
