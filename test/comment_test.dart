@@ -413,4 +413,111 @@ void main() {
       );
     });
   });
+
+  /// A note has to be readable on whatever canvas it is drawn on, and it must
+  /// not inherit the host app's input styling.
+  ///
+  /// Both halves were broken at once: the ink was a single near-white constant
+  /// that vanished on a light canvas, and the field left
+  /// [InputDecoration.filled] unset, so a host whose `InputDecorationTheme`
+  /// fills its inputs painted a solid box straight across the note. In a light
+  /// app that is white ink on a white box.
+  group('legibility', () {
+    Future<TextField> pumpNote(
+      WidgetTester tester, {
+      required NodeEditorTheme canvas,
+      required ThemeData hostTheme,
+    }) async {
+      final controller = NodeEditorController(
+        graph: NodeGraph(
+          nodes: <GraphNode>[
+            NodeComment.create(
+              id: 'n1',
+              position: const Offset(40, 40),
+              text: 'a note',
+            ),
+          ],
+        ),
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: hostTheme,
+          home: Scaffold(
+            body: NodeEditor(
+              controller: controller,
+              theme: canvas,
+              nodeBuilder: (context, node, state) =>
+                  const ColoredBox(color: Color(0xFF2A2E38)),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return tester.widget<TextField>(find.byType(TextField));
+    }
+
+    /// A host that fills its inputs, which is an ordinary thing for an app to
+    /// want and used to be enough to erase every note on the board.
+    ThemeData filledHost(Brightness brightness) => ThemeData(
+      brightness: brightness,
+      inputDecorationTheme: const InputDecorationTheme(
+        filled: true,
+        fillColor: Color(0xFFFFFFFF),
+      ),
+    );
+
+    testWidgets('the note refuses the host\'s input fill', (tester) async {
+      final field = await pumpNote(
+        tester,
+        canvas: NodeEditorTheme.light(),
+        hostTheme: filledHost(Brightness.light),
+      );
+      expect(
+        field.decoration?.filled,
+        isFalse,
+        reason: 'left unset, the host paints a solid box over the note',
+      );
+    });
+
+    testWidgets('the ink follows the canvas, not one fixed colour', (
+      tester,
+    ) async {
+      final onLight = await pumpNote(
+        tester,
+        canvas: NodeEditorTheme.light(),
+        hostTheme: filledHost(Brightness.light),
+      );
+      final onDark = await pumpNote(
+        tester,
+        canvas: NodeEditorTheme.dark(),
+        hostTheme: filledHost(Brightness.dark),
+      );
+
+      final light = onLight.style!.color!;
+      final dark = onDark.style!.color!;
+      expect(light, isNot(dark));
+      expect(
+        light.computeLuminance(),
+        lessThan(0.5),
+        reason: 'dark ink on a light canvas',
+      );
+      expect(
+        dark.computeLuminance(),
+        greaterThan(0.5),
+        reason: 'light ink on a dark canvas',
+      );
+    });
+
+    testWidgets('the canvas decides, not the host brightness', (tester) async {
+      // A light app around a dark canvas is a legitimate arrangement, and the
+      // note is drawn on the canvas.
+      final field = await pumpNote(
+        tester,
+        canvas: NodeEditorTheme.dark(),
+        hostTheme: filledHost(Brightness.light),
+      );
+      expect(field.style!.color!.computeLuminance(), greaterThan(0.5));
+    });
+  });
 }
