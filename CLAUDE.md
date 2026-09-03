@@ -159,6 +159,31 @@ point has no button to focus either, so the anchor focuses itself on open and
 hands off to the first choosable entry; without that the arrow keys never reach
 the menu and Escape reaches the canvas instead.
 
+## Hooks a host can hang on
+
+`guard` and `onEdit` on the controller, both null by default. `_mutate` is the
+single funnel every edit goes through, so both live there and neither can be
+bypassed by adding a method later — which is the reason the parameter is
+positional and required rather than optional: a new mutator that forgets to say
+what it is doing does not compile.
+
+**`guard` is synchronous and refusing is silent.** The controller cannot hold a
+graph half-changed while a dialog is open, so a host that needs to ask
+something refuses, asks, and calls the mutator again. The editor has nothing to
+add to a refusal — the host already knows it refused.
+
+**Neither hook sees undo or redo.** `history.undo()` sets `_graph` directly and
+calls `_afterJump`; it does not go through `_mutate`. That is correct rather
+than an oversight: undo restores a graph the hooks already saw, and a host that
+vetoed a delete would otherwise be unable to redo one it had allowed. It does
+mean a host tracking whether a particular node still exists has to *listen* as
+well as guard — `ripple_effect` does exactly that for the node a paused
+campaign is checkpointed on.
+
+The guard is consulted before prototypes are resolved. Resolving first would
+mean a refused edit had already done the expensive half of the work against a
+graph about to be discarded.
+
 ## Comments
 
 A comment is a `GraphNode` of a reserved type (`NodeComment.type`), not a model

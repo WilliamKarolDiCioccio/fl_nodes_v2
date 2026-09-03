@@ -12,6 +12,8 @@
 ///   delegates the look of each node to a `nodeBuilder` you supply.
 library;
 
+export 'src/controller/graph_edit.dart'
+    show GraphEdit, GraphEditKind, GraphEditGuard, GraphEditListener;
 export 'src/controller/node_editor_controller.dart'
     show
         ConnectionValidator,

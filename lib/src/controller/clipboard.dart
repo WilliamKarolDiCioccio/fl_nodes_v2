@@ -220,7 +220,12 @@ class NodeEditorClipboard {
     // gives a pasted node its prototype-owned ports back. A family derived
     // from link state resolves against the wires that came along, so a node
     // copied without them legitimately arrives smaller than it left.
-    _controller._mutate(next, touchedNodes: pasted, resolve: pasted);
+    _controller._mutate(
+      next,
+      GraphEdit(kind: GraphEditKind.addNodes, nodeIds: pasted.toSet()),
+      touchedNodes: pasted,
+      resolve: pasted,
+    );
 
     final survivors = <String>{
       for (final id in pasted)

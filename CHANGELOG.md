@@ -1,3 +1,41 @@
+## Unreleased
+
+### Telling the host what changed, and letting it say no
+
+Two hooks on `NodeEditorController`, both null by default so nothing changes
+for a host that ignores them:
+
+- `guard` (`GraphEditGuard?`, null) — asked before every edit; returning false
+  abandons it, leaving the graph untouched, no undo step recorded and `onEdit`
+  unfired. Consulted at the very top of `_mutate`, before prototypes are
+  resolved, so a refused edit costs nothing rather than resolving against a
+  graph that is then thrown away.
+- `onEdit` (`GraphEditListener?`, null) — told after every edit that landed.
+  `ChangeNotifier` already says *that* the graph changed; this says **what**,
+  which is the difference between a host diffing two graphs and reading one
+  field.
+
+Both take a `GraphEdit`: a `GraphEditKind` plus the node, connection and group
+ids it touched. The kinds are deliberately coarse — `addNodes`, `updateNodes`,
+`removeNodes`, `moveNodes`, `connect`, `disconnect`, `labelConnection`,
+`group`, `comment`, `replace` — because a host wants to know whether something
+*went away*, not to carry a case per controller method.
+
+`guard` is **synchronous**, and that is the contract rather than a limitation:
+an edit is a frame's work and the controller cannot hold a graph half-changed
+while a dialog is open. A host that needs to ask a question refuses, asks, and
+re-issues the edit once it has an answer. `graph_edit_test.dart` pins that
+round trip.
+
+**Undo and redo do not pass through either hook.** They restore a graph the
+hooks already saw on the way in, and a host that had refused a delete would
+otherwise be unable to redo one it had allowed — so `history.undo()` bypasses
+`_mutate` entirely and the test says so. A host that must catch every way a
+node can leave the graph listens as well as guarding.
+
+`graph_edit_test.dart` covers all sixteen cases; the existing 400 tests are
+unchanged.
+
 ## 0.1.0
 
 First release. A node graph editor for Flutter, and the spiritual successor to

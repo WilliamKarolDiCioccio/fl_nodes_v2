@@ -7,6 +7,7 @@ import 'package:flutter/painting.dart' show EdgeInsets;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../collections/spatial_hash_grid.dart';
+import 'graph_edit.dart';
 import '../geometry/node_geometry.dart';
 import '../geometry/viewport_transform.dart';
 import '../model/graph_node.dart';
@@ -114,6 +115,20 @@ class NodeEditorController extends ChangeNotifier {
   /// [setCommentText].
   String? _commentBeingTyped;
 
+  /// Asked before every edit this controller makes. Returning false abandons
+  /// it, leaving the graph exactly as it was.
+  ///
+  /// **Undo and redo do not pass through here.** They restore a graph the
+  /// guard already saw on the way in, so asking again would be asking about a
+  /// decision already taken — and a host that refused a delete would then be
+  /// unable to redo one it had allowed. A host that must know about *every*
+  /// way a node can leave the graph watches [onEdit] and listens for the
+  /// jump as well.
+  GraphEditGuard? guard;
+
+  /// Told after every edit that landed, with what it touched.
+  GraphEditListener? onEdit;
+
   /// Bumped whenever node geometry or the graph itself changes.
   ///
   /// Consumers that cache derived geometry — the connection path cache, say —
@@ -157,7 +172,12 @@ class NodeEditorController extends ChangeNotifier {
     final outcome = ids == null
         ? _prototypes.resolveAll(_graph)
         : _prototypes.resolve(_graph, seeds: ids);
-    _mutate(outcome.graph, record: recordHistory, touchedNodes: null);
+    _mutate(
+      outcome.graph,
+      const GraphEdit(kind: GraphEditKind.replace),
+      record: recordHistory,
+      touchedNodes: null,
+    );
   }
 
   // ------------------------------------------------------------- mutation
@@ -173,11 +193,16 @@ class NodeEditorController extends ChangeNotifier {
   /// nothing else, wiring changes shape and nothing else — which is what keeps
   /// the resolver off the drag path entirely.
   void _mutate(
-    NodeGraph next, {
+    NodeGraph next,
+    GraphEdit edit, {
     bool record = true,
     Iterable<String>? touchedNodes = const <String>[],
     Iterable<String> resolve = const <String>[],
   }) {
+    // Before anything is computed: a refused edit must cost nothing and, more
+    // to the point, must not have resolved prototypes against a graph that is
+    // then thrown away.
+    if (guard?.call(edit) == false) return;
     var settled = next;
     Set<String>? reshaped;
     if (resolve.isNotEmpty && _prototypes.isNotEmpty) {
@@ -208,6 +233,7 @@ class NodeEditorController extends ChangeNotifier {
     }
     selection._prune();
     notifyListeners();
+    onEdit?.call(edit);
   }
 
   /// Replaces the whole document, e.g. after loading from disk.
@@ -221,6 +247,7 @@ class NodeEditorController extends ChangeNotifier {
   }) {
     _mutate(
       graph,
+      GraphEdit(kind: GraphEditKind.replace, nodeIds: graph.nodes.keys.toSet()),
       record: recordHistory,
       touchedNodes: null,
       resolve: normalise
@@ -237,13 +264,19 @@ class NodeEditorController extends ChangeNotifier {
   /// no separate "create from prototype" call to remember.
   void addNode(GraphNode node) => _mutate(
     _graph.putNode(node),
+    GraphEdit(kind: GraphEditKind.addNodes, nodeIds: <String>{node.id}),
     touchedNodes: <String>[node.id],
     resolve: <String>[node.id],
   );
 
   void addNodes(Iterable<GraphNode> nodes) {
     final ids = nodes.map((node) => node.id).toList(growable: false);
-    _mutate(_graph.putNodes(nodes), touchedNodes: ids, resolve: ids);
+    _mutate(
+      _graph.putNodes(nodes),
+      GraphEdit(kind: GraphEditKind.addNodes, nodeIds: ids.toSet()),
+      touchedNodes: ids,
+      resolve: ids,
+    );
   }
 
   /// Rewrites a single node through [update]. No-op if the node is gone.
@@ -252,6 +285,7 @@ class NodeEditorController extends ChangeNotifier {
     if (node == null) return;
     _mutate(
       _graph.putNode(update(node)),
+      GraphEdit(kind: GraphEditKind.updateNodes, nodeIds: <String>{id}),
       touchedNodes: <String>[id],
       resolve: <String>[id],
     );
@@ -278,6 +312,7 @@ class NodeEditorController extends ChangeNotifier {
     layout._forgetMeasurements(doomed);
     _mutate(
       _graph.removeNodes(doomed),
+      GraphEdit(kind: GraphEditKind.removeNodes, nodeIds: doomed),
       touchedNodes: doomed,
       resolve: neighbours,
     );
@@ -295,6 +330,10 @@ class NodeEditorController extends ChangeNotifier {
     });
     _mutate(
       _graph.putNodes(updated),
+      GraphEdit(
+        kind: GraphEditKind.moveNodes,
+        nodeIds: <String>{for (final node in updated) node.id},
+      ),
       touchedNodes: updated.map((node) => node.id).toList(growable: false),
     );
   }
@@ -345,7 +384,15 @@ class NodeEditorController extends ChangeNotifier {
     if (target == null) {
       if (loose.isEmpty) return null;
       final group = NodeGroup(id: nextId('group'), nodeIds: loose);
-      _mutate(_graph.putGroup(group), touchedNodes: const <String>[]);
+      _mutate(
+        _graph.putGroup(group),
+        GraphEdit(
+          kind: GraphEditKind.group,
+          nodeIds: loose,
+          groupIds: <String>{group.id},
+        ),
+        touchedNodes: const <String>[],
+      );
       selection.selectGroup(group.id);
       return group.id;
     }
@@ -354,6 +401,11 @@ class NodeEditorController extends ChangeNotifier {
     if (widened.length == target.nodeIds.length) return target.id;
     _mutate(
       _graph.putGroup(target.withNodes(widened)),
+      GraphEdit(
+        kind: GraphEditKind.group,
+        nodeIds: widened,
+        groupIds: <String>{target.id},
+      ),
       touchedNodes: const <String>[],
     );
     selection.selectGroup(target.id);
@@ -365,8 +417,11 @@ class NodeEditorController extends ChangeNotifier {
   /// The only operation on a group that is not also an operation on its
   /// contents. Deleting a selected frame takes the nodes with it — see
   /// [NodeEditorSelection.deleteSelected].
-  void disbandGroups(Iterable<String> ids) =>
-      _mutate(_graph.removeGroups(ids), touchedNodes: const <String>[]);
+  void disbandGroups(Iterable<String> ids) => _mutate(
+    _graph.removeGroups(ids),
+    GraphEdit(kind: GraphEditKind.group, groupIds: ids.toSet()),
+    touchedNodes: const <String>[],
+  );
 
   void renameGroup(String id, String name) {
     final group = _graph.groups[id];
@@ -376,6 +431,7 @@ class NodeEditorController extends ChangeNotifier {
     if (group.name == next) return;
     _mutate(
       _graph.putGroup(group.copyWith(name: next)),
+      GraphEdit(kind: GraphEditKind.group, groupIds: <String>{id}),
       touchedNodes: const <String>[],
     );
   }
@@ -386,6 +442,7 @@ class NodeEditorController extends ChangeNotifier {
     if (group == null || group.color == color) return;
     _mutate(
       _graph.putGroup(group.withColor(color)),
+      GraphEdit(kind: GraphEditKind.group, groupIds: <String>{id}),
       touchedNodes: const <String>[],
     );
   }
@@ -430,6 +487,7 @@ class NodeEditorController extends ChangeNotifier {
     final continuing = _commentBeingTyped == id;
     _mutate(
       _graph.putNode(next),
+      GraphEdit(kind: GraphEditKind.comment, nodeIds: <String>{id}),
       record: !continuing,
       touchedNodes: <String>[id],
     );
@@ -448,7 +506,14 @@ class NodeEditorController extends ChangeNotifier {
     if (connection == null) return;
     final trimmed = (label == null || label.isEmpty) ? null : label;
     if (connection.label == trimmed) return;
-    _mutate(_graph.putConnection(connection.withLabel(trimmed)));
+    _mutate(
+      _graph.putConnection(connection.withLabel(trimmed)),
+      GraphEdit(
+        kind: GraphEditKind.labelConnection,
+        nodeIds: <String>{connection.from.nodeId, connection.to.nodeId},
+        connectionIds: <String>{id},
+      ),
+    );
   }
 
   void removeConnections(Iterable<String> ids) {
@@ -463,7 +528,15 @@ class NodeEditorController extends ChangeNotifier {
           ..add(connection.to.nodeId);
       }
     }
-    _mutate(_graph.removeConnections(doomed), resolve: endpoints);
+    _mutate(
+      _graph.removeConnections(doomed),
+      GraphEdit(
+        kind: GraphEditKind.disconnect,
+        nodeIds: endpoints,
+        connectionIds: doomed.toSet(),
+      ),
+      resolve: endpoints,
+    );
   }
 
   /// Whether [a] and [b] could be wired together, in either drag order.
@@ -496,6 +569,11 @@ class NodeEditorController extends ChangeNotifier {
     );
     _mutate(
       _graph.putConnection(connection),
+      GraphEdit(
+        kind: GraphEditKind.connect,
+        nodeIds: <String>{pair.$1.nodeId, pair.$2.nodeId},
+        connectionIds: <String>{connection.id},
+      ),
       resolve: <String>{pair.$1.nodeId, pair.$2.nodeId},
     );
     // Wiring a port can change the shape of the node it belongs to, and a
