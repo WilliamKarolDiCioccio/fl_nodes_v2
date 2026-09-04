@@ -65,7 +65,14 @@ abstract final class ConnectionLabel {
   static const double horizontalPadding = 5;
   static const double verticalPadding = 2;
 
-  static const double _maxWidth = 160;
+  /// The widest a caption is ever drawn, in scene units at scale 1.
+  ///
+  /// Public because a host that arranges its own graph cannot get it any other
+  /// way, and needs it: the caption sits at the midpoint of a curve, so the gap
+  /// a layout leaves between two ranks has to be at least this wide or every
+  /// caption is drawn over a node. It is a hard cap — the text is one line and
+  /// ellipsised — so a layout can trust it rather than guess.
+  static const double maxWidth = 160;
   static const double _defaultFontSize = 11;
 
   /// Lays [text] out the way it will be painted.
@@ -89,7 +96,7 @@ abstract final class ConnectionLabel {
       textDirection: TextDirection.ltr,
       maxLines: 1,
       ellipsis: '…',
-    )..layout(maxWidth: _maxWidth);
+    )..layout(maxWidth: maxWidth);
     _cache[key] = painter;
     return painter;
   }

@@ -405,10 +405,11 @@ void main() {
         graph: NodeGraph(nodes: <GraphNode>[node('a')]),
       );
       addTearDown(controller.dispose);
-      final NodeWidgetBuilder builder = (context, graphNode, state) {
+      Widget builder(BuildContext context, GraphNode node, NodeRenderState _) {
         builds++;
         return const ColoredBox(color: Color(0xFF2A2E38));
-      };
+      }
+
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(

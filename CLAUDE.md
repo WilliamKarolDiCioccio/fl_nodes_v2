@@ -204,6 +204,11 @@ freeze after, or make the guard read a field the host can lower for the length
 of a rebuild. `applyLayout` returns false rather than pretending, which is what
 makes that visible instead of mysterious.
 
+`ConnectionLabel.maxWidth` is public for the same reason and is the third of
+these: a caption sits at the midpoint of a curve and is capped at that width,
+so the gap a layout leaves between ranks is *derivable* rather than tuned by
+eye. A host guessing it draws captions over its own nodes.
+
 `onMeasured` finishes the sentence `hasUnmeasuredNodes` starts. Knowing to wait
 is no use without being told the wait is over, and `notifyListeners` cannot say
 it — it fires for every edit and every measurement, so a host watching it

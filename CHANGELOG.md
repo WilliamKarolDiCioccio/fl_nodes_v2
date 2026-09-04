@@ -1,5 +1,18 @@
 ## Unreleased
 
+### How wide a caption can get
+
+`ConnectionLabel.maxWidth` (160) was private and is not any more. A host that
+arranges its own graph cannot get the number any other way and needs it: a
+caption is drawn at the midpoint of a curve, so the gap a layout leaves between
+two ranks has to be at least this wide or every caption lands on a node. It is
+a hard cap — the text is one line and ellipsised — so a layout can be derived
+from it rather than tuned by eye.
+
+The same argument `applyLayout` and `onMeasured` already make: the algorithm
+stays out of the package, and the measurements it cannot take for itself come
+out.
+
 ### Pointing at part of a graph
 
 `NodeEditorController.emphasis` (`NodeEditorEmphasis`, empty) — a **focus**: a
