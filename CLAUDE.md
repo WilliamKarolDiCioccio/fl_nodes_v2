@@ -184,6 +184,34 @@ The guard is consulted before prototypes are resolved. Resolving first would
 mean a refused edit had already done the expensive half of the work against a
 graph about to be discarded.
 
+**`applyLayout` and `onMeasured` are the auto-layout seam, and the algorithm is
+deliberately not here.** Which picture a graph should make is a question about
+what the nodes mean, and this package does not know. What it can supply is the
+two things a host cannot get for itself — the size each node is really drawn
+at, and one edit that places the lot.
+
+`applyLayout` **ignores `draggable` where `moveNodes` honours it.** That is the
+whole reason it is a second method rather than a flag on the first: the flag
+says whether a *pointer* may push a node, which is a different question from
+whether an arrangement may place one, and a read-only canvas — where nothing is
+draggable — is exactly where an automatic layout is most wanted. A flag threaded
+through `moveNodes` would read at every call site as if it were a choice.
+
+It goes through `_mutate` like everything else, which has one consequence worth
+knowing before debugging it: **a host that freezes a canvas with
+`guard = (_) => false` freezes its own arrangement too.** Arrange first and
+freeze after, or make the guard read a field the host can lower for the length
+of a rebuild. `applyLayout` returns false rather than pretending, which is what
+makes that visible instead of mysterious.
+
+`onMeasured` finishes the sentence `hasUnmeasuredNodes` starts. Knowing to wait
+is no use without being told the wait is over, and `notifyListeners` cannot say
+it — it fires for every edit and every measurement, so a host watching it
+re-asks each time and has to remember the previous answer. It fires on the
+transition, after the notification rather than before it: a host that arranges
+from there mutates the graph, and doing that midway through announcing a
+measurement would have listeners reading a graph that is about to move.
+
 ## Comments
 
 A comment is a `GraphNode` of a reserved type (`NodeComment.type`), not a model

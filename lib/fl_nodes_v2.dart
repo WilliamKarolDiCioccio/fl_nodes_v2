@@ -20,6 +20,7 @@ export 'src/controller/node_editor_controller.dart'
         GraphDocumentSink,
         GraphDocumentSource,
         GraphFragment,
+        GraphLayout,
         GraphRun,
         GraphRunDiagnostic,
         GraphRunException,

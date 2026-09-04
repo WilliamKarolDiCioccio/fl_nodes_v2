@@ -101,15 +101,16 @@ Four value types, all immutable:
 ### The controller
 
 `NodeEditorController` owns the graph and every edit to it — `addNode`,
-`updateNode`, `removeNodes`, `moveNodes`, `connect`, `removeConnections`,
-`replaceGraph`, `nextId`. Everything else is a named subsystem:
+`updateNode`, `removeNodes`, `moveNodes`, `applyLayout`, `connect`,
+`removeConnections`, `replaceGraph`, `nextId`. Everything else is a named
+subsystem:
 
 | | |
 | --- | --- |
 | `controller.history` | `undo`, `redo`, `canUndo`, transactions |
 | `controller.selection` | `nodeIds`, `connectionIds`, `selectNodes`, `selectAll`, `deleteSelected` |
 | `controller.camera` | `viewport`, `panBy`, `zoomBy`, `setScale`, `fitToContent`, `centerOn`, `centerOnNode` |
-| `controller.layout` | `sizeOf`, `nodeAt`, `portAt`, `nodesIn`, `boundsOf` |
+| `controller.layout` | `sizeOf`, `nodeAt`, `portAt`, `nodesIn`, `boundsOf`, `onMeasured` |
 | `controller.clipboard` | `copy`, `cut`, `paste`, `duplicate` |
 | `controller.project` | the open document: `save`, `load`, `open`, `reset`, `isDirty` |
 | `controller.runner` | `run`, `cancel`, `stateOf` |

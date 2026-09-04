@@ -1,5 +1,41 @@
 ## Unreleased
 
+### Somewhere to hang an automatic layout
+
+The package still ships no arrangement of its own and is not going to: which
+picture a graph should make is a question about what the nodes *mean*, and only
+the host knows that. What a host cannot get for itself is the two ends of the
+job, and both are here now.
+
+- `NodeEditorController.applyLayout` (`GraphLayout`, `recordHistory: true`) —
+  hands an algorithm the graph and the measured size of every node, and places
+  whatever it answers in **one** edit, so a re-layout is a single undo step and
+  a single repaint rather than one per node. Nodes the layout does not name are
+  left alone, so arranging a selection is just a smaller map. Returns whether
+  anything moved — false when the layout named nobody, named only nodes already
+  in place, or when `guard` refused.
+- `NodeEditorLayout.onMeasured` (`VoidCallback?`, null) — fired the moment
+  `hasUnmeasuredNodes` goes false.
+
+**`applyLayout` ignores `draggable` where `moveNodes` honours it**, and that is
+the point of it rather than an inconsistency: the flag says whether a *pointer*
+may push a node about, which is a different question from whether an
+arrangement may place one — and a read-only canvas, where nothing is draggable,
+is exactly where an automatic layout is most wanted. `moveNodes` is still the
+gesture path and still refuses.
+
+`onMeasured` exists because `hasUnmeasuredNodes` was only half a sentence. It
+already told a caller to wait; nothing told it the wait was over. The
+controller's own notifications cannot say so — they fire for every edit and
+every measurement, so a host watching them re-asks on each one and has to
+remember the previous answer. This fires once, on the transition, which is
+where a layout that depends on real extents wants to run. A graph whose nodes
+all declare a height never has anything to wait for and never fires it.
+
+Pinned by `test/graph_layout_test.dart`, including the two that state the
+difference: an arrangement places a `draggable: false` node, and `moveNodes`
+still refuses the same one.
+
 ### Telling the host what changed, and letting it say no
 
 Two hooks on `NodeEditorController`, both null by default so nothing changes

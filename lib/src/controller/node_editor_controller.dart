@@ -35,6 +35,25 @@ part 'selection.dart';
 typedef ConnectionValidator =
     bool Function(NodeGraph graph, PortRef from, PortRef to);
 
+/// Works out where every node should go.
+///
+/// The package ships no arrangement of its own and is not going to: which
+/// picture a graph should make is a question about what the nodes *mean*, and
+/// only the host knows that. What it can supply is the two things such an
+/// algorithm cannot get for itself — the graph, and the size each node is
+/// actually drawn at, measured rather than guessed. See
+/// [NodeEditorController.applyLayout] for the actuator, and
+/// [NodeEditorLayout.onMeasured] for knowing when the sizes are real.
+///
+/// A position is wanted for every node the layout means to place; nodes it
+/// leaves out are left where they are, so arranging a selection is just a
+/// smaller map.
+typedef GraphLayout =
+    Map<String, Offset> Function(
+      NodeGraph graph,
+      Size Function(GraphNode node) sizeOf,
+    );
+
 /// The single source of truth for a [NodeEditor].
 ///
 /// Owns the immutable [graph] and every edit made to it. The rest — the undo
@@ -336,6 +355,55 @@ class NodeEditorController extends ChangeNotifier {
       ),
       touchedNodes: updated.map((node) => node.id).toList(growable: false),
     );
+  }
+
+  /// Places nodes where [arrange] says they go, in one edit.
+  ///
+  /// The actuator half of auto-layout: the host brings the algorithm, this
+  /// hands it [graph] and the measured size of every node and applies what it
+  /// answers. One mutation for the whole arrangement, so a re-layout is a
+  /// single undo step and a single repaint rather than one per node.
+  ///
+  /// **Unlike [moveNodes] this ignores [GraphNode.draggable].** That flag says
+  /// whether a *pointer* may push a node about, which is a different question
+  /// from whether an arrangement may place one — and a read-only canvas, where
+  /// nothing is draggable, is exactly where an automatic layout is most wanted.
+  ///
+  /// Returns whether anything actually moved: false when the layout named
+  /// nothing, named only nodes already in the right place, or when [guard]
+  /// refused the edit.
+  bool applyLayout(GraphLayout arrange, {bool recordHistory = true}) =>
+      _place(arrange(_graph, layout.sizeOf), record: recordHistory);
+
+  /// The half of [moveNodes] that is only about positions.
+  ///
+  /// Split out rather than shared with [moveNodes], because the two differ on
+  /// the one line that matters — whether `draggable` is consulted — and a flag
+  /// threaded through to say which caller this is would read at every call
+  /// site as if it were a choice.
+  bool _place(Map<String, Offset> positions, {required bool record}) {
+    if (positions.isEmpty) return false;
+    final updated = <GraphNode>[];
+    positions.forEach((id, position) {
+      final node = _graph.nodes[id];
+      if (node == null || node.position == position) return;
+      updated.add(node.copyWith(position: position));
+    });
+    if (updated.isEmpty) return false;
+
+    final before = _graph;
+    _mutate(
+      _graph.putNodes(updated),
+      GraphEdit(
+        kind: GraphEditKind.moveNodes,
+        nodeIds: <String>{for (final node in updated) node.id},
+      ),
+      record: record,
+      touchedNodes: updated.map((node) => node.id).toList(growable: false),
+    );
+    // Identity rather than a bare `true`: `_mutate` is where [guard] is asked,
+    // and a refused arrangement must not report that it happened.
+    return !identical(_graph, before);
   }
 
   void translateNodes(Iterable<String> ids, Offset delta, {double snap = 0}) {

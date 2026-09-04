@@ -36,9 +36,25 @@ class NodeEditorLayout {
     (node) => node.hasIntrinsicHeight && !_measuredSizes.containsKey(node.id),
   );
 
+  /// Told the moment [hasUnmeasuredNodes] stops being true.
+  ///
+  /// The other half of that sentence. Knowing to wait is no use without being
+  /// told the wait is over, and the controller's own notifications cannot say
+  /// it: they fire for every edit and every measurement, so a host watching
+  /// them has to re-ask on each one and remember the previous answer. This
+  /// fires once, on the transition, which is where an automatic layout wants
+  /// to run — see [NodeEditorController.applyLayout].
+  ///
+  /// A graph whose nodes all declare a height never has anything to wait for
+  /// and so never fires this at all.
+  VoidCallback? onMeasured;
+
   /// Called by node widgets once their content has been laid out.
   void reportMeasuredSize(String nodeId, Size size) {
     if (_measuredSizes[nodeId] == size) return;
+    // Asked before the size is recorded: afterwards this node is measured by
+    // definition, and the transition being reported would be invisible.
+    final wasWaiting = hasUnmeasuredNodes;
     _measuredSizes[nodeId] = size;
     if (!(_controller._graph.nodes[nodeId]?.hasIntrinsicHeight ?? false)) {
       return;
@@ -46,6 +62,10 @@ class NodeEditorLayout {
     _controller._revision++;
     _reindexNodes(<String>[nodeId]);
     _controller._notify();
+    // After the notification rather than before it: a host that arranges from
+    // here mutates the graph, and doing that midway through announcing a
+    // measurement would have listeners reading a graph that is about to move.
+    if (wasWaiting && !hasUnmeasuredNodes) onMeasured?.call();
   }
 
   /// Nodes in paint order: raised ones last so they float above the rest.
