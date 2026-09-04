@@ -10,6 +10,7 @@ import '../collections/spatial_hash_grid.dart';
 import 'graph_edit.dart';
 import '../geometry/node_geometry.dart';
 import '../geometry/viewport_transform.dart';
+import '../model/graph_emphasis.dart';
 import '../model/graph_node.dart';
 import '../model/node_comment.dart';
 import '../model/node_connection.dart';
@@ -25,6 +26,7 @@ import '../serialization/node_graph_codec.dart';
 
 part 'camera.dart';
 part 'clipboard.dart';
+part 'emphasis.dart';
 part 'history.dart';
 part 'layout.dart';
 part 'project.dart';
@@ -78,6 +80,7 @@ class NodeEditorController extends ChangeNotifier {
        _prototypes = prototypes ?? NodePrototypeRegistry.empty {
     history = NodeEditorHistory(this, limit: historyLimit);
     selection = NodeEditorSelection(this);
+    emphasis = NodeEditorEmphasis(this);
     camera = NodeEditorCamera(this, viewport);
     layout = NodeEditorLayout(this, cellSize: spatialCellSize);
     clipboard = NodeEditorClipboard(this, codec: codec);
@@ -101,6 +104,9 @@ class NodeEditorController extends ChangeNotifier {
 
   /// What the user has selected.
   late final NodeEditorSelection selection;
+
+  /// What is being pointed at: the focus scrim and what stands above it.
+  late final NodeEditorEmphasis emphasis;
 
   /// Pan, zoom and framing.
   late final NodeEditorCamera camera;
@@ -251,6 +257,7 @@ class NodeEditorController extends ChangeNotifier {
       layout._reindexNodes(<String>{...touchedNodes, ...reshaped});
     }
     selection._prune();
+    emphasis._prune();
     notifyListeners();
     onEdit?.call(edit);
   }

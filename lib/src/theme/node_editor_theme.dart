@@ -40,6 +40,10 @@ class NodeEditorTheme {
     this.connectionHitTolerance = 9,
     this.connectionArrowSpacing = 140,
     this.connectionArrowMaxCount = 4,
+    this.scrimOpacity = 0.62,
+    this.emphasisInset = 7,
+    this.emphasisRadius = const Radius.circular(14),
+    this.scrimColor,
   });
 
   factory NodeEditorTheme.dark({Color accent = const Color(0xFF7C9CF5)}) {
@@ -149,6 +153,35 @@ class NodeEditorTheme {
 
   final Color marqueeColor;
 
+  /// The wash drawn over everything a [GraphEmphasis] does not lift.
+  ///
+  /// Null derives it from [background] at [scrimOpacity], which is what makes
+  /// a focus dim *towards the canvas* in either brightness rather than towards
+  /// black in one of them.
+  final Color? scrimColor;
+
+  /// How opaque the derived [scrimColor] is.
+  ///
+  /// Deliberately short of covering: a focus that erased its surroundings
+  /// would answer "which routes are these" by throwing away the board they run
+  /// across, and a connection caption underneath still has to be readable.
+  final double scrimOpacity;
+
+  /// How far an emphasis halo sits outside the node's bounds.
+  final double emphasisInset;
+
+  /// How round an emphasis halo's corners are.
+  ///
+  /// Its own value rather than a node radius, because the package has none:
+  /// how round a card is belongs to whatever the host draws, so the halo says
+  /// how round *it* is and a host tunes the two to agree.
+  final Radius emphasisRadius;
+
+  /// The scrim actually painted: [scrimColor] when given, else [background]
+  /// faded to [scrimOpacity].
+  Color get resolvedScrim =>
+      scrimColor ?? background.withValues(alpha: scrimOpacity);
+
   final double minScale;
   final double maxScale;
 
@@ -182,6 +215,10 @@ class NodeEditorTheme {
     Color? selectionColor,
     double? selectionWidth,
     Radius? selectionRadius,
+    Color? scrimColor,
+    double? scrimOpacity,
+    double? emphasisInset,
+    Radius? emphasisRadius,
     double? selectionInset,
     Color? marqueeColor,
     double? minScale,
@@ -223,6 +260,10 @@ class NodeEditorTheme {
       selectionColor: selectionColor ?? this.selectionColor,
       selectionWidth: selectionWidth ?? this.selectionWidth,
       selectionRadius: selectionRadius ?? this.selectionRadius,
+      scrimColor: scrimColor ?? this.scrimColor,
+      scrimOpacity: scrimOpacity ?? this.scrimOpacity,
+      emphasisInset: emphasisInset ?? this.emphasisInset,
+      emphasisRadius: emphasisRadius ?? this.emphasisRadius,
       selectionInset: selectionInset ?? this.selectionInset,
       marqueeColor: marqueeColor ?? this.marqueeColor,
       minScale: minScale ?? this.minScale,
@@ -260,6 +301,10 @@ class NodeEditorTheme {
     selectionColor,
     selectionWidth,
     selectionRadius,
+    scrimColor,
+    scrimOpacity,
+    emphasisInset,
+    emphasisRadius,
     selectionInset,
     marqueeColor,
     minScale,

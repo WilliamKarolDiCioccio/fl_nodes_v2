@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import '../collections/spatial_hash_grid.dart';
@@ -54,6 +55,43 @@ class ConnectionGeometry {
   /// is also null — the placeholder is the painter's business, not the cache's.
   final String? caption;
 }
+
+/// Filled direction markers for [arrows], in scene units.
+///
+/// Shared rather than written twice: [ConnectionsPainter] draws every wire and
+/// [EmphasisPainter] redraws the lifted ones above the focus scrim, and two
+/// copies of this triangle would be identical the day they were written and
+/// different the first time either learned something — the same argument the
+/// caches here already make about geometry.
+///
+/// [skip] is asked with each marker's *scene* position and drops the ones that
+/// would land under something: a caption sits at the midpoint, which is
+/// exactly where an odd-numbered run puts one.
+Path arrowheadsPath(
+  List<PathArrow> arrows,
+  double size, {
+  bool Function(Offset scenePosition)? skip,
+}) {
+  final path = Path();
+  for (final arrow in arrows) {
+    if (skip != null && skip(arrow.position)) continue;
+    // Centred on the sample, so the head reads as sitting on the wire rather
+    // than hanging off it.
+    final direction = arrow.direction;
+    final tip = arrow.position + direction * (size * 0.5);
+    final base = arrow.position - direction * (size * 0.5);
+    final across = Offset(-direction.dy, direction.dx) * (size * 0.42);
+    path
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(base.dx + across.dx, base.dy + across.dy)
+      ..lineTo(base.dx - across.dx, base.dy - across.dy)
+      ..close();
+  }
+  return path;
+}
+
+/// How wide a direction marker is drawn at [scale], in scene units.
+double arrowheadSize(double scale) => 9.0 * math.min(scale, 1.4) / scale;
 
 /// Builds connection paths once and keeps them until the graph changes.
 ///

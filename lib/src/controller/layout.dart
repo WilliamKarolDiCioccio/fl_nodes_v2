@@ -139,8 +139,16 @@ class NodeEditorLayout {
     PortRef? best;
     var bestDistance = double.infinity;
 
+    // A handle under the focus scrim is not drawn, and so must not be
+    // grabbable either: the package's one rule about invisible handles — see
+    // [NodeEditorTheme.portMinScale] — is that a single condition gates
+    // drawing *and* hitting, because a dot you cannot see that still starts a
+    // wire is worse than one plainly not there yet.
+    final lifted = _controller.emphasis.lifted;
+
     final probe = Rect.fromCircle(center: scenePoint, radius: radius);
     for (final id in _index.queryRect(probe)) {
+      if (lifted.isNotEmpty && !lifted.contains(id)) continue;
       final node = _controller._graph.nodes[id];
       if (node == null) continue;
       final size = sizeOf(node);
@@ -197,19 +205,30 @@ class NodeEditorLayout {
     return nodes;
   }
 
-  /// The nodes that float above the rest: what is selected, **plus every
-  /// member of every selected group**.
+  /// The nodes that float above the rest.
   ///
-  /// Selecting a group still does not select its nodes — this is the same
-  /// expansion delete, cut, copy and drag already act through. Paint order is
-  /// the one place the distinction would be actively unhelpful: a frame is
-  /// picked up by its handle and moved as a unit, and a group that stayed
-  /// underneath whatever it was dragged over has to be moved somewhere else
-  /// before you can click what it is now covering.
+  /// **A focus wins outright.** While [NodeEditorEmphasis] lifts anything, it
+  /// alone decides, and the selection is ignored: a selected node floating
+  /// above the scrim is precisely the thing the scrim promises will not
+  /// happen, and a union of the two would let one stray click undo the whole
+  /// effect.
   ///
-  /// Costs nothing when no group is selected: [NodeEditorSelection.nodeIds] is
-  /// a cached snapshot and the expansion returns it unchanged.
-  Set<String> get _raised => _controller.selection.nodeIdsWithGroups;
+  /// Otherwise it is what is selected, **plus every member of every selected
+  /// group**. Selecting a group still does not select its nodes — this is the
+  /// same expansion delete, cut, copy and drag already act through. Paint
+  /// order is the one place the distinction would be actively unhelpful: a
+  /// frame is picked up by its handle and moved as a unit, and a group that
+  /// stayed underneath whatever it was dragged over has to be moved somewhere
+  /// else before you can click what it is now covering.
+  ///
+  /// Costs nothing in either case: both are cached snapshots, and the group
+  /// expansion returns [NodeEditorSelection.nodeIds] unchanged when no group
+  /// is selected.
+  Set<String> get _raised {
+    final lifted = _controller.emphasis.lifted;
+    if (lifted.isNotEmpty) return lifted;
+    return _controller.selection.nodeIdsWithGroups;
+  }
 
   static int _rank(GraphNode node, Set<String> raised) =>
       raised.contains(node.id) ? 1 : 0;

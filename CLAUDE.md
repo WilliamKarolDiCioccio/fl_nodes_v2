@@ -212,6 +212,67 @@ transition, after the notification rather than before it: a host that arranges
 from there mutates the graph, and doing that midway through announcing a
 measurement would have listeners reading a graph that is about to move.
 
+## Emphasis
+
+`controller.emphasis` is a **focus**: a set of nodes and connections that stand
+clear of a scrim washed over everything else. It is how a host answers a
+question *about* the graph — every route between two nodes, everything one
+value reaches — without editing the graph to say it.
+
+**It is beside `selection`, and for the same three reasons.** No undo entry, no
+serialisation, no trip through `_mutate`: it is where the user is looking
+rather than something they authored. `guard` cannot refuse it, which is the
+point — a read-only canvas is exactly where a focus is most wanted.
+
+**Why it is on the controller and not on `NodeEditor`.** `layout.nodeAt` and
+`layout.nodesInPaintOrder` rank through one function. A widget-level input
+could reorder what is *painted* without reordering what a press *lands on*,
+which is the drift the layout already warns about. The other half of it: the
+editor listens to the controller already, so a host never has to rebuild
+`NodeEditor` to show a focus — the one thing this package asks a host not to do,
+and there is a test that a focus builds no node body.
+
+**A focus wins outright over the selection** in `_raised`. Union was the
+obvious implementation and is wrong: a selected node floating above the scrim
+is exactly what the scrim promises will not happen, so one stray click would
+undo the effect.
+
+**Two maps, not one.** `nodes` and `connections` are independent because the
+first consumer needed a run of flow that passes *through* a node it does not
+want to show: tint the wires either side, leave the node out, and the coloured
+run reads as continuous across a card that is still dimmed. Membership lifts,
+the value tints, and a null value lifts without tinting.
+
+Three things about the rendering, each already paid for:
+
+- **The lifted wires are redrawn above the scrim, not recoloured in place.**
+  `ConnectionsPainter` is layer 1 and the whole node layer is layer 3, so every
+  wire is *under* a scrim painted inside that layer — a forced colour there
+  would simply be washed out. `EmphasisPainter` sits in the node layer's own
+  stack immediately below the first lifted card and re-strokes them from
+  `ConnectionLayout`'s cache, which was built for the layer underneath and is
+  already warm. `arrowheadsPath`/`arrowheadSize` are shared with
+  `ConnectionsPainter` rather than copied.
+- **The halo is painted behind the card**, which is what makes any of this
+  possible at the package level: a host's node widget is opaque and untouched,
+  so `NodeRenderState` and `_NodeSlot`'s comparison tuple both gain nothing.
+  The theme carries `emphasisRadius` rather than reading a node radius, because
+  the package has none — how round a card is belongs to the host.
+- **A handle under the scrim is neither drawn nor grabbable.** `PortsPainter`
+  paints above the whole node layer, so a dimmed card would otherwise keep a
+  row of bright dots on top of the wash; `layout.portAt` skips the same nodes,
+  because one condition gates drawing *and* hitting — the rule `portMinScale`
+  already follows.
+
+`emphasis._prune` runs after every mutation **and** in `_afterJump`. Undo and
+redo do not pass through `_mutate`, and a focus is not in the document, so
+nothing else would take a halo off a node that has gone.
+
+Connection captions are deliberately **not** redrawn above the scrim, which is
+why the default `scrimOpacity` is 0.62 rather than opaque. A focus that erased
+its surroundings would answer "which routes are these" by throwing away the
+board they run across.
+
 ## Comments
 
 A comment is a `GraphNode` of a reserved type (`NodeComment.type`), not a model

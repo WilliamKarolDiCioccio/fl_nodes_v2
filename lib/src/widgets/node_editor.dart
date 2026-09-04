@@ -16,6 +16,7 @@ import '../model/port_ref.dart';
 import '../painting/connection_label.dart';
 import '../painting/connection_layout.dart';
 import '../painting/connections_painter.dart';
+import '../painting/emphasis_painter.dart';
 import '../painting/grid_painter.dart';
 import '../painting/grid_shader.dart';
 import '../painting/overlay_painter.dart';
@@ -1396,6 +1397,10 @@ class NodeEditorState extends State<NodeEditor> {
                         revision: _controller.revision,
                         hovered: _hoveredPort,
                         highlighted: _pendingTarget,
+                        // Handles draw above the whole node layer, scrim
+                        // included, so a dimmed card would otherwise keep a
+                        // row of bright dots floating over the wash.
+                        lifted: _controller.emphasis.lifted,
                       ),
                       size: size,
                     ),
@@ -1469,8 +1474,39 @@ class NodeEditorState extends State<NodeEditor> {
       (under[lowest ?? 0] ??= <(NodeGroup, Rect)>[]).add(entry);
     }
 
+    // Where the focus scrim goes: immediately below the first lifted node, so
+    // everything under it is washed and everything from there up stands clear.
+    // Before that index's group bucket rather than after, so a frame whose
+    // lowest member is lifted rises with it — groups are not emphasised
+    // individually, and a frame left behind its own contents reads as a bug.
+    final lifted = _controller.emphasis.lifted;
+    final focusAt = lifted.isEmpty
+        ? -1
+        : drawn.indexWhere((node) => lifted.contains(node.id));
+
     final children = <Widget>[];
     for (var index = 0; index <= drawn.length; index++) {
+      if (index == focusAt) {
+        children.add(
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: EmphasisPainter(
+                  emphasis: _controller.emphasis.value,
+                  emphasisRevision: _controller.emphasis.revision,
+                  lifted: drawn.sublist(focusAt),
+                  sizeOf: _controller.layout.sizeOf,
+                  connections: _connections,
+                  origin: origin,
+                  scale: viewport.scale,
+                  theme: theme,
+                  revision: _controller.revision,
+                ),
+              ),
+            ),
+          ),
+        );
+      }
       for (final (group, frame)
           in under[index] ?? const <(NodeGroup, Rect)>[]) {
         children.add(
