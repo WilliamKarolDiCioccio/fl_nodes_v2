@@ -98,6 +98,7 @@ class NodeEditorHistory {
     _controller._revision++;
     _controller.layout._reindexAll();
     _controller.selection._prune();
+    _controller.emphasis._prune();
     _controller._notify();
   }
 }

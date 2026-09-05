@@ -20,6 +20,7 @@ export 'src/controller/node_editor_controller.dart'
         GraphDocumentSink,
         GraphDocumentSource,
         GraphFragment,
+        GraphLayout,
         GraphRun,
         GraphRunDiagnostic,
         GraphRunException,
@@ -27,6 +28,7 @@ export 'src/controller/node_editor_controller.dart'
         NodeEditorCamera,
         NodeEditorClipboard,
         NodeEditorController,
+        NodeEditorEmphasis,
         NodeEditorHistory,
         NodeEditorLayout,
         NodeEditorProject,
@@ -39,6 +41,7 @@ export 'src/geometry/connection_router.dart'
     show ConnectionEndpoints, ConnectionRouter;
 export 'src/geometry/node_geometry.dart' show NodeGeometry;
 export 'src/geometry/viewport_transform.dart' show ViewportTransform;
+export 'src/model/graph_emphasis.dart' show GraphEmphasis;
 export 'src/model/graph_node.dart' show GraphNode;
 export 'src/model/node_comment.dart' show NodeComment;
 export 'src/model/node_connection.dart' show NodeConnection;
@@ -109,8 +112,9 @@ export 'src/minimap/minimap_scene.dart' show MinimapScene;
 export 'src/painting/connection_label.dart'
     show ConnectionCaption, ConnectionLabel;
 export 'src/painting/connection_layout.dart'
-    show ConnectionGeometry, ConnectionLayout;
+    show ConnectionGeometry, ConnectionLayout, arrowheadSize, arrowheadsPath;
 export 'src/painting/connections_painter.dart' show ConnectionsPainter;
+export 'src/painting/emphasis_painter.dart' show EmphasisPainter;
 export 'src/painting/grid_painter.dart' show GridPainter;
 export 'src/painting/grid_shader.dart' show GridShader;
 export 'src/painting/ports_painter.dart' show PortsPainter;

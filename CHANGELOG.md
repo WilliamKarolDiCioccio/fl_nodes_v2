@@ -1,5 +1,133 @@
 ## Unreleased
 
+### How wide a caption can get
+
+`ConnectionLabel.maxWidth` (160) was private and is not any more. A host that
+arranges its own graph cannot get the number any other way and needs it: a
+caption is drawn at the midpoint of a curve, so the gap a layout leaves between
+two ranks has to be at least this wide or every caption lands on a node. It is
+a hard cap — the text is one line and ellipsised — so a layout can be derived
+from it rather than tuned by eye.
+
+The same argument `applyLayout` and `onMeasured` already make: the algorithm
+stays out of the package, and the measurements it cannot take for itself come
+out.
+
+### Pointing at part of a graph
+
+`NodeEditorController.emphasis` (`NodeEditorEmphasis`, empty) — a **focus**: a
+set of nodes and connections that stand clear while everything else is washed
+under a scrim. It is what a host needs to answer a question *about* a graph —
+every route between these two nodes, everything this value reaches — without
+editing the graph to say so.
+
+- `GraphEmphasis` (`nodes`, `connections`, `scrim`) — a value type. Membership
+  lifts; the value tints. A null tint lifts a node without painting a halo
+  behind it, and lifts a wire without overriding its colour.
+- `emphasis.value = …` replaces the focus wholesale, `clear()` drops it, and an
+  equal value is a **no-op** — a host that recomputes the same answer every
+  tick costs no repaint.
+- `emphasis.revision` is the O(1) invalidation key, exactly as
+  `selection.revision` is, and `emphasis.lifted` is a cached snapshot so paint
+  order and hover picking do not allocate.
+- `NodeEditorTheme` gains `scrimColor` (null), `scrimOpacity` (0.62),
+  `emphasisInset` (7) and `emphasisRadius` (`Radius.circular(14)`). A null
+  `scrimColor` derives from `background`, so a focus dims *towards the canvas*
+  in either brightness rather than towards black in one of them.
+
+**`nodes` and `connections` are two maps rather than one**, and that is the
+shape the first consumer actually needed: a run of flow that passes through a
+node the host does not want to show is expressed by tinting the wires either
+side of it and leaving the node out, so the coloured run reads as continuous
+across a card that is still dimmed.
+
+**It lives on the controller and not on the `NodeEditor` widget**, for a reason
+that only shows up once it is wrong. `NodeEditorLayout.nodeAt` and
+`nodesInPaintOrder` rank through one function, and a widget-level input could
+have reordered what is *drawn* without reordering what a press *lands on* —
+which is the drift the layout's own doc comment already warns about. Putting it
+on the controller also means the editor's existing listener does the repaint,
+so a host never has to rebuild `NodeEditor` to show a focus, which is the one
+thing this package asks a host not to do.
+
+**A focus wins outright over the selection.** While anything is lifted, the
+selection is ignored for paint order: a selected node floating above the scrim
+is precisely what the scrim promises will not happen, and a union of the two
+would let one stray click undo the whole effect.
+
+It is **not** in the document, **not** in the undo history, and **never
+reaches** `guard` or `onEdit` — assigning a focus is not an edit, for the same
+reason a selection is not one. It is pruned after every mutation *and* after
+undo and redo, because a focus is not in the graph and nothing else would drop
+a halo painted around a node that has gone.
+
+Two details worth knowing before touching the rendering:
+
+- **The lifted wires are redrawn above the scrim rather than recoloured in
+  place.** `ConnectionsPainter` draws every curve below the whole node layer,
+  so a forced colour applied there would be washed out by the scrim. The new
+  `EmphasisPainter` sits inside the node layer's own stack, immediately below
+  the first lifted card, and re-strokes them from `ConnectionLayout`'s cache —
+  already warm, so nothing is computed twice. `arrowheadsPath` and
+  `arrowheadSize` moved out of `ConnectionsPainter` so both painters draw the
+  same triangle.
+- **A handle under the scrim is neither drawn nor grabbable.** `PortsPainter`
+  paints above the whole node layer, so a dimmed card would otherwise keep a
+  row of bright dots floating over the wash; `NodeEditorLayout.portAt` skips
+  the same nodes, because one condition has to gate drawing and hitting alike —
+  the rule `portMinScale` already follows.
+
+The halo is painted **behind** the card, which is what makes this a
+package-level feature at all: a host's node widget is opaque and untouched,
+`NodeRenderState` gains nothing, and `_NodeSlot`'s comparison is unchanged, so
+none of the rebuild isolation is at risk. There is a test that showing a focus
+builds no node body at all.
+
+Connection captions are **not** redrawn above the scrim; they stay under it,
+which is why the default scrim is 0.62 rather than opaque. A focus that erased
+its surroundings would answer "which routes are these" by throwing away the
+board they run across.
+
+Pinned by `test/emphasis_test.dart`, including the two that state the rules
+above: a selected-but-unlifted node does not rise, and `portAt` answers null
+for a node under the scrim.
+
+### Somewhere to hang an automatic layout
+
+The package still ships no arrangement of its own and is not going to: which
+picture a graph should make is a question about what the nodes *mean*, and only
+the host knows that. What a host cannot get for itself is the two ends of the
+job, and both are here now.
+
+- `NodeEditorController.applyLayout` (`GraphLayout`, `recordHistory: true`) —
+  hands an algorithm the graph and the measured size of every node, and places
+  whatever it answers in **one** edit, so a re-layout is a single undo step and
+  a single repaint rather than one per node. Nodes the layout does not name are
+  left alone, so arranging a selection is just a smaller map. Returns whether
+  anything moved — false when the layout named nobody, named only nodes already
+  in place, or when `guard` refused.
+- `NodeEditorLayout.onMeasured` (`VoidCallback?`, null) — fired the moment
+  `hasUnmeasuredNodes` goes false.
+
+**`applyLayout` ignores `draggable` where `moveNodes` honours it**, and that is
+the point of it rather than an inconsistency: the flag says whether a *pointer*
+may push a node about, which is a different question from whether an
+arrangement may place one — and a read-only canvas, where nothing is draggable,
+is exactly where an automatic layout is most wanted. `moveNodes` is still the
+gesture path and still refuses.
+
+`onMeasured` exists because `hasUnmeasuredNodes` was only half a sentence. It
+already told a caller to wait; nothing told it the wait was over. The
+controller's own notifications cannot say so — they fire for every edit and
+every measurement, so a host watching them re-asks on each one and has to
+remember the previous answer. This fires once, on the transition, which is
+where a layout that depends on real extents wants to run. A graph whose nodes
+all declare a height never has anything to wait for and never fires it.
+
+Pinned by `test/graph_layout_test.dart`, including the two that state the
+difference: an arrangement places a `draggable: false` node, and `moveNodes`
+still refuses the same one.
+
 ### Telling the host what changed, and letting it say no
 
 Two hooks on `NodeEditorController`, both null by default so nothing changes

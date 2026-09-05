@@ -141,8 +141,6 @@ class ConnectionsPainter extends CustomPainter {
   /// that would land under a caption are dropped: the caption sits at the
   /// midpoint, which is exactly where an odd-numbered run puts one.
   Path _arrowheads(ConnectionGeometry geometry, NodeConnection connection) {
-    final scale = viewport.scale;
-    final size = 9.0 * math.min(scale, 1.4) / scale;
     final caption = ConnectionLabel.captionFor(
       text: geometry.caption,
       anchor: geometry.labelAnchor,
@@ -152,24 +150,13 @@ class ConnectionsPainter extends CustomPainter {
     );
     final avoid = caption?.rect.inflate(2);
 
-    final path = Path();
-    for (final arrow in geometry.arrows) {
-      if (avoid != null && avoid.contains(viewport.toScreen(arrow.position))) {
-        continue;
-      }
-      // Centred on the sample, so the head reads as sitting on the wire rather
-      // than hanging off it.
-      final direction = arrow.direction;
-      final tip = arrow.position + direction * (size * 0.5);
-      final base = arrow.position - direction * (size * 0.5);
-      final across = Offset(-direction.dy, direction.dx) * (size * 0.42);
-      path
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo(base.dx + across.dx, base.dy + across.dy)
-        ..lineTo(base.dx - across.dx, base.dy - across.dy)
-        ..close();
-    }
-    return path;
+    return arrowheadsPath(
+      geometry.arrows,
+      arrowheadSize(viewport.scale),
+      skip: avoid == null
+          ? null
+          : (position) => avoid.contains(viewport.toScreen(position)),
+    );
   }
 
   /// Labels are drawn in screen space so they keep a constant size, unlike

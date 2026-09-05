@@ -33,6 +33,7 @@ class PortsPainter extends CustomPainter {
     required this.revision,
     this.hovered,
     this.highlighted,
+    this.lifted,
   });
 
   /// The nodes currently drawn, already culled by the editor.
@@ -54,6 +55,21 @@ class PortsPainter extends CustomPainter {
   final PortRef? hovered;
   final PortRef? highlighted;
 
+  /// The nodes a [GraphEmphasis] has lifted above the focus scrim, or null
+  /// when nothing is focused.
+  ///
+  /// Handles are drawn *above* the whole node layer, scrim included, so
+  /// without this every dimmed card would keep a row of bright dots floating
+  /// over the wash. Nodes outside it are skipped — and [NodeEditorLayout.portAt]
+  /// skips them too, because one condition has to gate drawing and hitting
+  /// alike: an invisible dot that still starts a wire is worse than one
+  /// plainly not there yet, which is the same rule [NodeEditorTheme.portMinScale]
+  /// already follows.
+  ///
+  /// A cached snapshot, so [shouldRepaint] can compare it by identity the way
+  /// it compares [connectedPorts].
+  final Set<String>? lifted;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (viewport.scale < theme.portMinScale) return;
@@ -66,7 +82,11 @@ class PortsPainter extends CustomPainter {
     final strokes = <Color, Path>{};
     final active = <Offset>[];
 
+    final focus = lifted;
     for (final node in nodes) {
+      if (focus != null && focus.isNotEmpty && !focus.contains(node.id)) {
+        continue;
+      }
       final nodeSize = sizeOf(node);
       final connected = connectedPorts[node.id];
       for (final port in node.ports) {
@@ -125,5 +145,6 @@ class PortsPainter extends CustomPainter {
       oldDelegate.theme != theme ||
       oldDelegate.hovered != hovered ||
       oldDelegate.highlighted != highlighted ||
-      !identical(oldDelegate.connectedPorts, connectedPorts);
+      !identical(oldDelegate.connectedPorts, connectedPorts) ||
+      !identical(oldDelegate.lifted, lifted);
 }
