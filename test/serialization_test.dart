@@ -759,6 +759,143 @@ void main() {
     });
   });
 
+  group('schema versions', () {
+    /// A host chain that records the order its steps ran in.
+    (Map<int, GraphDocumentMigration>, List<int>) recordingChain(
+      Iterable<int> from,
+    ) {
+      final ran = <int>[];
+      return (<int, GraphDocumentMigration>{
+        for (final step in from)
+          step: (document) {
+            ran.add(step);
+            return <String, Object?>{...document, 'schema': step + 1};
+          },
+      }, ran);
+    }
+
+    test('the stamp is written only by a codec that has an axis', () {
+      final graph = NodeGraph();
+
+      expect(
+        const NodeGraphCodec(
+          schemaVersion: 3,
+        ).encode(GraphDocument(graph: graph)),
+        containsPair('schema', 3),
+      );
+      expect(
+        const NodeGraphCodec().encode(GraphDocument(graph: graph)),
+        isNot(contains('schema')),
+      );
+    });
+
+    test('a document with no schema key reads as the floor and is lifted', () {
+      final (chain, ran) = recordingChain(<int>[1, 2]);
+      final codec = NodeGraphCodec(schemaVersion: 3, schemaMigrations: chain);
+
+      final document = codec.decode(<String, Object?>{'version': 1});
+
+      expect(ran, <int>[1, 2], reason: 'the chain runs one step at a time');
+      expect(
+        document.schemaVersion,
+        3,
+        reason: 'a decoded document reports the version it was lifted to',
+      );
+    });
+
+    test('a newer schema is refused, and says so as a schema', () {
+      const codec = NodeGraphCodec(schemaVersion: 3);
+
+      expect(
+        () => codec.decode(<String, Object?>{'version': 1, 'schema': 4}),
+        throwsA(
+          isA<GraphDocumentVersionException>()
+              .having((e) => e.found, 'found', 4)
+              .having((e) => e.supported, 'supported', 3)
+              .having((e) => e.location, 'location', 'schema')
+              // Not 'format version 4' — that would send somebody looking on
+              // the package's side of the boundary for a change of the host's.
+              .having((e) => e.message, 'message', contains('schema version')),
+        ),
+      );
+    });
+
+    test('a nonsense schema is a format error, located', () {
+      const codec = NodeGraphCodec(schemaVersion: 3);
+
+      for (final bad in <Object?>['one', 0, -1, 1.5]) {
+        expect(
+          () => codec.decode(<String, Object?>{'version': 1, 'schema': bad}),
+          throwsA(
+            isA<GraphDocumentFormatException>().having(
+              (e) => e.location,
+              'location',
+              'schema',
+            ),
+          ),
+          reason: 'schema: $bad',
+        );
+      }
+    });
+
+    test('a gap in the host chain names the missing step', () {
+      final codec = NodeGraphCodec(
+        schemaVersion: 4,
+        schemaMigrations: <int, GraphDocumentMigration>{
+          1: (document) => <String, Object?>{...document, 'schema': 2},
+        },
+      );
+
+      expect(
+        () => codec.decode(<String, Object?>{'version': 1, 'schema': 1}),
+        throwsA(
+          isA<GraphDocumentVersionException>()
+              .having((e) => e.message, 'message', contains('version 2 to 3'))
+              .having((e) => e.message, 'message', contains('schema version'))
+              .having((e) => e.location, 'location', 'schema'),
+        ),
+      );
+    });
+
+    test('the format gate runs before the schema gate', () {
+      const codec = NodeGraphCodec(schemaVersion: 1);
+
+      // Both axes are out of range. The format one is the honest answer: this
+      // build cannot read the envelope, so what the host meant by its contents
+      // is not a question worth reaching.
+      expect(
+        () => codec.decode(<String, Object?>{'version': 2, 'schema': 99}),
+        throwsA(
+          isA<GraphDocumentVersionException>().having(
+            (e) => e.location,
+            'location',
+            'version',
+          ),
+        ),
+      );
+    });
+
+    test('a codec with no axis carries a schema it does not understand', () {
+      const codec = NodeGraphCodec();
+      const once = <String, Object?>{
+        'version': 1,
+        'schema': 9,
+        'package': 'fl_nodes_v2/0.2.0',
+        'nodes': <Object?>[],
+        'connections': <Object?>[],
+      };
+
+      final document = codec.decode(once);
+
+      expect(document.schemaVersion, 9, reason: 'read, not acted on');
+      expect(
+        codec.encode(document),
+        once,
+        reason: 'a host with no opinion about the schema must not drop it',
+      );
+    });
+  });
+
   group('payloads', () {
     final codecs = PayloadCodecs(<PayloadCodec<Object>>[
       PayloadCodec<DateTime>(

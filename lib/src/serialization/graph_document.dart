@@ -13,6 +13,7 @@ class GraphDocument {
     this.meta = const <String, Object?>{},
     this.appVersion,
     this.packageVersion,
+    this.schemaVersion,
   });
 
   final NodeGraph graph;
@@ -38,18 +39,33 @@ class GraphDocument {
   /// version is the only thing that governs how a document is parsed.
   final String? packageVersion;
 
+  /// The *host's* own format version for what it keeps in this document.
+  ///
+  /// The package's integer governs the envelope — nodes, connections, groups,
+  /// ports. This one governs what the host means by a node's `type` and by the
+  /// keys in its `data`, both of which the package carries and never
+  /// interprets. Two axes because they move on different clocks: renaming a
+  /// field on somebody else's node type is not a reason for this package to
+  /// cut a format version, and cutting one here should not oblige every host
+  /// to write a migration.
+  ///
+  /// Null on a document from a host that does not version its own data.
+  final int? schemaVersion;
+
   GraphDocument copyWith({
     NodeGraph? graph,
     ViewportTransform? viewport,
     Map<String, Object?>? meta,
     String? appVersion,
     String? packageVersion,
+    int? schemaVersion,
   }) => GraphDocument(
     graph: graph ?? this.graph,
     viewport: viewport ?? this.viewport,
     meta: meta ?? this.meta,
     appVersion: appVersion ?? this.appVersion,
     packageVersion: packageVersion ?? this.packageVersion,
+    schemaVersion: schemaVersion ?? this.schemaVersion,
   );
 
   @override
@@ -60,7 +76,8 @@ class GraphDocument {
           other.viewport == viewport &&
           mapEquals(other.meta, meta) &&
           other.appVersion == appVersion &&
-          other.packageVersion == packageVersion;
+          other.packageVersion == packageVersion &&
+          other.schemaVersion == schemaVersion;
 
   @override
   int get hashCode => Object.hash(
@@ -69,6 +86,7 @@ class GraphDocument {
     Object.hashAllUnordered(meta.keys),
     appVersion,
     packageVersion,
+    schemaVersion,
   );
 
   @override

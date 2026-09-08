@@ -573,6 +573,27 @@ dispatch on the same recorded string. Documents carry an integer `version`; one
 newer than the build is refused rather than parsed hopefully, and older ones are
 lifted by pure `Map`-to-`Map` migrations.
 
+A document carries a **second** version, and it is the host's:
+
+```dart
+const codec = NodeGraphCodec(
+  schemaVersion: 3,
+  schemaMigrations: <int, GraphDocumentMigration>{
+    1: (document) => …,   // version 1 of *your* data, as version 2
+    2: (document) => …,
+  },
+);
+```
+
+`version` governs the envelope — nodes, connections, groups, ports, the shape
+this package owns. `schema` governs what *you* mean by a node's `type` and by
+the keys in its `data`, which the package carries and never interprets. So a
+field you rename or two you fold into one is a `schema` bump, and this package
+cutting a format version does not oblige you to write a migration for it. Both
+gates run on the way in, the format's first; a missing `schema` reads as 1, and
+leaving `schemaVersion` null means a `schema` key is carried through untouched
+rather than gated.
+
 ### Theming
 
 `NodeEditorTheme.dark()` / `.light()`, or build one field by field. It covers

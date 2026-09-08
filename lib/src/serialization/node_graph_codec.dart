@@ -57,12 +57,14 @@ class NodeGraphCodec {
     this.ports = PortStorage.all,
     this.storeDerivedLabels = false,
     this.migrations = GraphDocumentMigrations.standard,
+    this.schemaVersion,
+    this.schemaMigrations = const <int, GraphDocumentMigration>{},
   }) : _payloads = payloads;
 
   /// The version [encode] writes, and the version [decode] migrates up to.
   static const int version = 1;
 
-  static const String _packageStamp = 'fl_nodes_v2/0.1.0';
+  static const String _packageStamp = 'fl_nodes_v2/0.2.0';
 
   final PayloadCodecs? _payloads;
 
@@ -86,14 +88,50 @@ class NodeGraphCodec {
 
   final Map<int, GraphDocumentMigration> migrations;
 
+  /// The schema version [encode] stamps and [decode] migrates a document up
+  /// to, or null for a host that does not version its own data.
+  ///
+  /// [version] governs the envelope — nodes, connections, groups, ports, the
+  /// shape this package owns. This governs what the *host* means by a node's
+  /// `type` and by the keys in its `data`, which the package carries and never
+  /// interprets, so it is the only axis that can express a field being renamed
+  /// or two being folded into one.
+  ///
+  /// Null is what every host had before this existed, and it is not the same
+  /// as 1: a `schema` key in the document is then carried through untouched
+  /// rather than gated, because a build that declares no opinion about the
+  /// host's data has no business refusing a document over it.
+  final int? schemaVersion;
+
+  /// The host's chain, keyed by the version each entry migrates *from*.
+  ///
+  /// The same `Map` to `Map` contract [migrations] has, and for the same
+  /// reason: a migration that never mentions a model type cannot be broken by
+  /// refactoring one, and it is testable with a literal on each side.
+  final Map<int, GraphDocumentMigration> schemaMigrations;
+
+  /// What a document with no `schema` key means to a host that has an axis.
+  ///
+  /// Every document written before the host declared one, which is all of them
+  /// the first time it does. Reading those as an error would refuse exactly the
+  /// files the axis exists to carry forward.
+  static const int legacySchemaVersion = 1;
+
   // ----------------------------------------------------------------- encode
 
   Map<String, Object?> encode(GraphDocument document) {
     final path = DocumentPath();
     final graph = document.graph;
 
+    // The document's own value wins where it has one, the way `package` does:
+    // a document that has been through [decode] carries the version it was
+    // migrated to, and re-encoding it under a codec with no axis of its own
+    // must not drop what it said.
+    final schema = document.schemaVersion ?? schemaVersion;
+
     return <String, Object?>{
       'version': version,
+      if (schema case final int schema) 'schema': schema,
       'package': document.packageVersion ?? _packageStamp,
       if (document.appVersion != null) 'app': document.appVersion,
       if (document.viewport != null)
@@ -427,16 +465,64 @@ class NodeGraphCodec {
       );
     }
 
-    final current = GraphDocumentMigrations.upgrade(
+    // The package's step first, always: it normalises the envelope that the
+    // host's migration then walks. Reversed, a host migration would be handed
+    // a shape this build has already stopped believing in.
+    var current = GraphDocumentMigrations.upgrade(
       json,
       from: found,
       target: version,
       chain: migrations,
     );
-    return _read(current, reader);
+
+    var schema = _readSchema(current, reader);
+    final schemaTarget = schemaVersion;
+    if (schemaTarget != null) {
+      final from = schema ?? legacySchemaVersion;
+      if (from > schemaTarget) {
+        throw GraphDocumentVersionException(
+          'This document is in schema version $from, and this build reads up '
+          'to schema version $schemaTarget. Update the app that opens it.',
+          found: from,
+          supported: schemaTarget,
+          path: const <Object>['schema'],
+        );
+      }
+      current = GraphDocumentMigrations.upgrade(
+        current,
+        from: from,
+        target: schemaTarget,
+        chain: schemaMigrations,
+        label: 'schema',
+        key: 'schema',
+      );
+      schema = schemaTarget;
+    }
+
+    return _read(current, reader, schemaVersion: schema);
   }
 
-  GraphDocument _read(Map<String, Object?> json, DocumentReader reader) {
+  /// The schema version [json] claims, or null when it claims none.
+  ///
+  /// Shape only: whether the number is one this build can read is [decode]'s
+  /// question, and it is not asked at all when this codec declares no axis.
+  int? _readSchema(Map<String, Object?> json, DocumentReader reader) {
+    if (json['schema'] == null) return null;
+    final schema = reader.at('schema', () => reader.integer(json['schema']));
+    if (schema < 1) {
+      throw GraphDocumentFormatException(
+        'schema version must be 1 or greater, found $schema',
+        path: const <Object>['schema'],
+      );
+    }
+    return schema;
+  }
+
+  GraphDocument _read(
+    Map<String, Object?> json,
+    DocumentReader reader, {
+    int? schemaVersion,
+  }) {
     final nodes = <GraphNode>[];
     final nodeIds = <String>{};
     reader.at<void>('nodes', () {
@@ -505,6 +591,7 @@ class NodeGraphCodec {
       packageVersion: json['package'] == null
           ? null
           : reader.at('package', () => reader.string(json['package'])),
+      schemaVersion: schemaVersion,
     );
   }
 
