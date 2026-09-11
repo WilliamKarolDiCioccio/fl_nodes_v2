@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../model/graph_node.dart';
 import '../theme/node_editor_theme.dart';
+import 'corner_grip.dart';
 import 'node_box.dart';
 
 /// Interaction state handed to the host's node builder.
@@ -74,10 +75,10 @@ class NodeView extends StatefulWidget {
     this.onResizeEnd,
   });
 
-  /// How wide the strip along the right edge is that resizes rather than
-  /// moves. Eight scene units: enough to hit, not enough to steal the edge
-  /// of a control a host put there.
-  static const double resizeGripWidth = 8;
+  /// The square in the bottom-right corner that resizes rather than moves —
+  /// the minimap's grip, drawn the same so a person who has found one knows
+  /// the other.
+  static const double resizeGripSize = CornerGrip.size;
 
   final GraphNode node;
   final NodeEditorTheme theme;
@@ -102,7 +103,7 @@ class NodeView extends StatefulWidget {
   final void Function(Offset globalPosition) onDragUpdate;
   final VoidCallback onDragEnd;
 
-  /// Whether the right edge is a resize grip; see [resizeGripWidth].
+  /// Whether the bottom-right corner is a resize grip; see [resizeGripSize].
   final bool resizable;
 
   /// The resize gesture, reported in global pixels the way a drag is.
@@ -126,11 +127,33 @@ class _NodeViewState extends State<NodeView> {
   /// True while the pan that is in flight is a resize, decided at its start.
   bool _resizing = false;
 
+  /// What the content measured, for finding the corner of a node whose
+  /// height is its content's.
+  Size? _measured;
+
   bool get _resizable => widget.resizable && widget.onResizeStart != null;
 
-  bool _onGrip(Offset localPosition) =>
-      _resizable &&
-      localPosition.dx >= widget.node.width - NodeView.resizeGripWidth;
+  /// The box as drawn: the declared or measured height, or the floor somebody
+  /// dragged it to, whichever is taller.
+  double? get _boxHeight {
+    final natural = widget.node.height ?? _measured?.height;
+    if (natural == null) return null;
+    final floor = widget.node.minHeight;
+    return floor == null || floor < natural ? natural : floor;
+  }
+
+  bool _onGrip(Offset localPosition) {
+    if (!_resizable) return false;
+    final height = _boxHeight;
+    if (height == null) return false;
+    return localPosition.dx >= widget.node.width - NodeView.resizeGripSize &&
+        localPosition.dy >= height - NodeView.resizeGripSize;
+  }
+
+  void _onContentSized(Size size) {
+    _measured = size;
+    widget.onContentSized(size);
+  }
 
   void _handlePanStart(DragStartDetails details) {
     if (_onGrip(details.localPosition)) {
@@ -202,7 +225,7 @@ class _NodeViewState extends State<NodeView> {
     );
 
     return NodeBox(
-      onContentSized: widget.onContentSized,
+      onContentSized: _onContentSized,
       child: _buildContent(context, node, state),
     );
   }
@@ -215,9 +238,18 @@ class _NodeViewState extends State<NodeView> {
     // The pan recogniser is registered whenever there is anything a pan
     // could mean, and the handlers decide which from where the press landed.
     final pans = node.draggable || _resizable;
-    final body = SizedBox(
+    final floor = node.minHeight;
+    // A declared height is stretched to the floor outright, so the host's
+    // body is built to the whole box and can fill it. A measured one is
+    // given the floor as a constraint instead: its content still decides,
+    // and only gets more room than it asked for.
+    final declared = node.height;
+    final height = declared == null
+        ? null
+        : (floor == null || floor < declared ? declared : floor);
+    Widget body = SizedBox(
       width: node.width,
-      height: node.height,
+      height: height,
       child: CustomPaint(
         foregroundPainter: state.isSelected
             ? _SelectionPainter(widget.theme)
@@ -225,6 +257,12 @@ class _NodeViewState extends State<NodeView> {
         child: widget.builder(context, node, state),
       ),
     );
+    if (declared == null && floor != null) {
+      body = ConstrainedBox(
+        constraints: BoxConstraints(minHeight: floor),
+        child: body,
+      );
+    }
 
     return MouseRegion(
       cursor: node.draggable
@@ -250,18 +288,24 @@ class _NodeViewState extends State<NodeView> {
             ? Stack(
                 children: <Widget>[
                   body,
-                  // Only the cursor lives here. The strip takes no gesture
-                  // of its own — see [NodeView.onResizeStart] — so a
-                  // MouseRegion is all it is, and `hitTestBehavior` keeps it
-                  // from being an opaque box over a host control's edge.
-                  const Positioned(
-                    top: 0,
-                    bottom: 0,
+                  // The grip takes no gesture of its own — see
+                  // [NodeView.onResizeStart] — so this is a cursor and a
+                  // drawing, and `hitTestBehavior` keeps it from being an
+                  // opaque box over the corner of a host control. Drawn only
+                  // while the node is hovered or selected: a mark on every
+                  // card is noise, a mark on the one under the pointer is a
+                  // hint.
+                  Positioned(
                     right: 0,
-                    width: NodeView.resizeGripWidth,
+                    bottom: 0,
                     child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeLeftRight,
+                      cursor: SystemMouseCursors.resizeUpLeftDownRight,
                       hitTestBehavior: HitTestBehavior.translucent,
+                      child: state.isHovered || state.isSelected
+                          ? CornerGrip(color: widget.theme.selectionColor)
+                          : const SizedBox.square(
+                              dimension: NodeView.resizeGripSize,
+                            ),
                     ),
                   ),
                 ],

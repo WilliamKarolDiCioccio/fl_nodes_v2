@@ -19,6 +19,7 @@ class GraphNode {
     this.type = 'default',
     this.width = defaultWidth,
     this.height,
+    this.minHeight,
     this.ports = const <NodePort>[],
     this.data = const <String, Object?>{},
     this.draggable = true,
@@ -43,6 +44,19 @@ class GraphNode {
 
   /// Fixed height, or null to size to the built content.
   final double? height;
+
+  /// The least tall the node is drawn, whatever [height] or its content says
+  /// — what a person dragging the corner chose. Null when nobody has.
+  ///
+  /// A floor rather than a height, so it never fights the prototype: a card
+  /// that grows a row keeps the row, and one that loses a row keeps the room
+  /// somebody asked for. The box extends **below** the declared height and
+  /// the ports stay where they were — every explicit anchor is a fraction of
+  /// [height], not of the box — so a wire lands on the same row of a card
+  /// however tall the card has been made. A prototype that wants the extra
+  /// room *used* rather than left blank reads this in `resolveHeight` and
+  /// answers with a taller [height] laid out to it.
+  final double? minHeight;
 
   final List<NodePort> ports;
 
@@ -73,6 +87,7 @@ class GraphNode {
     Offset? position,
     double? width,
     double? height,
+    double? minHeight,
     List<NodePort>? ports,
     Map<String, Object?>? data,
     bool? draggable,
@@ -84,6 +99,7 @@ class GraphNode {
       position: position ?? this.position,
       width: width ?? this.width,
       height: height ?? this.height,
+      minHeight: minHeight ?? this.minHeight,
       ports: ports ?? this.ports,
       data: data ?? this.data,
       draggable: draggable ?? this.draggable,
@@ -105,6 +121,22 @@ class GraphNode {
     position: position,
     width: width,
     height: height,
+    minHeight: minHeight,
+    ports: ports,
+    data: data,
+    draggable: draggable,
+    selectable: selectable,
+  );
+
+  /// Returns a copy with [minHeight] set, or cleared when null — the same
+  /// reason [withHeight] exists beside [copyWith].
+  GraphNode withMinHeight(double? minHeight) => GraphNode(
+    id: id,
+    type: type,
+    position: position,
+    width: width,
+    height: height,
+    minHeight: minHeight,
     ports: ports,
     data: data,
     draggable: draggable,
@@ -120,6 +152,7 @@ class GraphNode {
           other.position == position &&
           other.width == width &&
           other.height == height &&
+          other.minHeight == minHeight &&
           listEquals(other.ports, ports) &&
           payloadEquals(other.data, data) &&
           other.draggable == draggable &&
@@ -132,6 +165,7 @@ class GraphNode {
     position,
     width,
     height,
+    minHeight,
     Object.hashAll(ports),
     Object.hashAllUnordered(data.keys),
     draggable,

@@ -190,6 +190,11 @@ class NodeGraphCodec {
       'position': path.at('position', () => _encodeOffset(node.position, path)),
       'width': _finite(node.width, path, 'width'),
       if (node.height != null) 'height': _finite(node.height!, path, 'height'),
+      // Written only once somebody has dragged the corner, the way `height`
+      // is written only when declared: a document from before the field
+      // reads back identical, and one nobody stretched carries no key.
+      if (node.minHeight != null)
+        'minHeight': _finite(node.minHeight!, path, 'minHeight'),
       'draggable': node.draggable,
       'selectable': node.selectable,
       if (fields.isNotEmpty) 'fields': fields,
@@ -663,6 +668,9 @@ class NodeGraphCodec {
       height: json['height'] == null
           ? null
           : reader.at('height', () => reader.number(json['height'])),
+      minHeight: json['minHeight'] == null
+          ? null
+          : reader.at('minHeight', () => reader.number(json['minHeight'])),
       ports: ports,
       data: data,
       draggable: json['draggable'] == null

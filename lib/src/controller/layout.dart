@@ -20,8 +20,28 @@ class NodeEditorLayout {
   final Map<String, Size> _measuredSizes = <String, Size>{};
 
   /// The resolved size of [node]: its declared height, the height measured
-  /// from its built content, or a fallback on the very first frame.
+  /// from its built content, or a fallback on the very first frame — and no
+  /// less than [GraphNode.minHeight] when somebody has dragged the corner.
+  ///
+  /// This is the **box**: what is hit, selected, framed and drawn on the map.
+  /// Ports are placed against [anchorSizeOf] instead, which is the same thing
+  /// until a node is stretched.
   Size sizeOf(GraphNode node) {
+    final natural = anchorSizeOf(node);
+    final floor = node.minHeight;
+    if (floor == null || floor <= natural.height) return natural;
+    return Size(natural.width, floor);
+  }
+
+  /// The size a port's anchor is a fraction of: the declared height, else the
+  /// measured one.
+  ///
+  /// Deliberately not [sizeOf]. Every explicit anchor is a fraction of the
+  /// height its prototype laid the rows out at, so a card made taller than
+  /// that must keep its handles on the rows rather than sliding them down
+  /// the empty room below. A measured node's content is already laid out to
+  /// its floor — see `NodeView` — so for it the two agree.
+  Size anchorSizeOf(GraphNode node) {
     final declared = node.height;
     if (declared != null) return Size(node.width, declared);
     final measured = _measuredSizes[node.id];
@@ -151,7 +171,7 @@ class NodeEditorLayout {
       if (lifted.isNotEmpty && !lifted.contains(id)) continue;
       final node = _controller._graph.nodes[id];
       if (node == null) continue;
-      final size = sizeOf(node);
+      final size = anchorSizeOf(node);
       for (final port in node.ports) {
         final distance =
             (NodeGeometry.portPosition(node, port, size) - scenePoint).distance;
@@ -170,7 +190,7 @@ class NodeEditorLayout {
     if (node == null) return null;
     final port = node.portById(ref.portId);
     if (port == null) return null;
-    return NodeGeometry.portPosition(node, port, sizeOf(node));
+    return NodeGeometry.portPosition(node, port, anchorSizeOf(node));
   }
 
   void _reindexAll() {

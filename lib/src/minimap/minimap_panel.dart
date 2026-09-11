@@ -11,6 +11,7 @@ import 'minimap_controller.dart';
 import 'minimap_painter.dart';
 import 'minimap_palette.dart';
 import 'minimap_scene.dart';
+import '../widgets/corner_grip.dart';
 
 /// The minimap, as a panel floating over the canvas.
 ///
@@ -574,8 +575,6 @@ class _MinimapGrip extends StatelessWidget {
     required this.onUpdate,
   });
 
-  static const double size = 14;
-
   final Color color;
   final GestureDragStartCallback onStart;
   final GestureDragUpdateCallback onUpdate;
@@ -588,34 +587,7 @@ class _MinimapGrip extends StatelessWidget {
       dragStartBehavior: DragStartBehavior.down,
       onPanStart: onStart,
       onPanUpdate: onUpdate,
-      child: CustomPaint(
-        size: const Size.square(size),
-        painter: _GripPainter(color),
-      ),
+      child: CornerGrip(color: color),
     ),
   );
-}
-
-class _GripPainter extends CustomPainter {
-  const _GripPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round;
-    for (final inset in <double>[3, 7]) {
-      canvas.drawLine(
-        Offset(size.width - 2, size.height - inset),
-        Offset(size.width - inset, size.height - 2),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_GripPainter old) => old.color != color;
 }

@@ -1,13 +1,18 @@
+import 'dart:convert';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fl_nodes_v2/fl_nodes_v2.dart';
+import 'package:fl_nodes_v2/src/widgets/corner_grip.dart';
+import 'package:fl_nodes_v2/src/widgets/node_view.dart';
 
-/// Dragging a node's right edge changes its width — and only its width.
+/// Dragging a node's bottom-right corner resizes it.
 ///
-/// A prototype opts in with `resizable`; the floor is its `defaultWidth` and
-/// the strip along the right edge is `NodeView.resizeGripWidth` wide. The
+/// A prototype opts in with `resizable`; the width's floor is its
+/// `defaultWidth`, the height's floor is whatever the node already is, and
+/// the corner is `NodeView.resizeGripSize` square — the minimap's grip. The
 /// gesture is the node's own pan recogniser deciding what a press meant from
 /// where it landed, so nothing here contests the arena.
 void main() {
@@ -19,6 +24,7 @@ void main() {
         defaultWidth: 200,
         resizable: true,
         maxWidth: 400,
+        maxHeight: 300,
         ports: <PortFamily>[
           StaticPortFamily(
             id: 'io',
@@ -98,8 +104,8 @@ void main() {
     final node = controller.graph.node('a')!;
     expect(node.width, 200);
 
-    // Two pixels inside the right edge, in the grip.
-    await drag(tester, controller, const Offset(298, 160), const Offset(60, 0));
+    // A few pixels inside the bottom-right corner, in the grip.
+    await drag(tester, controller, const Offset(296, 216), const Offset(60, 0));
 
     final widened = controller.graph.node('a')!;
     expect(widened.width, 260);
@@ -113,6 +119,83 @@ void main() {
     controller.history.undo();
     expect(controller.graph.node('a')!.width, 200, reason: 'one step back');
     expect(controller.history.canUndo, isFalse);
+  });
+
+  testWidgets('dragging the corner down adds room below the rows', (
+    tester,
+  ) async {
+    final controller = await boot(tester);
+    final before = controller.layout.portPosition(const PortRef('a', 'out'))!;
+    expect(controller.layout.sizeOf(controller.graph.node('a')!).height, 120);
+
+    await drag(tester, controller, const Offset(296, 216), const Offset(0, 80));
+
+    final stretched = controller.graph.node('a')!;
+    expect(stretched.minHeight, 200, reason: 'a floor, not a height');
+    expect(stretched.height, isNull, reason: 'its content still decides');
+    expect(controller.layout.sizeOf(stretched).height, 200);
+    expect(
+      tester.getSize(find.byType(NodeView)).height,
+      200,
+      reason: 'and the box on screen is the stretched one',
+    );
+
+    // Back up past where it started: the floor goes, rather than staying as
+    // a number that happens to equal the natural height.
+    await drag(
+      tester,
+      controller,
+      const Offset(296, 296),
+      const Offset(0, -120),
+    );
+    expect(controller.graph.node('a')!.minHeight, isNull);
+    expect(controller.layout.sizeOf(controller.graph.node('a')!).height, 120);
+    expect(
+      controller.layout.portPosition(const PortRef('a', 'out')),
+      before,
+      reason: 'nothing about the ports was ever touched',
+    );
+  });
+
+  testWidgets('a declared height keeps its handles on their rows when '
+      'stretched', (tester) async {
+    final controller = NodeEditorController(
+      prototypes: NodePrototypeRegistry(const <NodePrototype>[
+        NodePrototype(
+          type: 'fixed',
+          resizable: true,
+          defaultWidth: 200,
+          ports: <PortFamily>[
+            StaticPortFamily(
+              id: 'io',
+              ports: <NodePort>[
+                NodePort.output(id: 'out', anchor: Offset(1, 0.75)),
+              ],
+            ),
+          ],
+        ),
+      ]),
+    );
+    addTearDown(controller.dispose);
+    controller.addNode(
+      GraphNode(
+        id: 'a',
+        type: 'fixed',
+        position: const Offset(100, 100),
+        width: 200,
+        height: 100,
+      ),
+    );
+    controller.updateNode('a', (node) => node.withMinHeight(300));
+
+    expect(controller.layout.sizeOf(controller.graph.node('a')!).height, 300);
+    expect(
+      controller.layout.portPosition(const PortRef('a', 'out')),
+      const Offset(300, 175),
+      reason:
+          'a fraction of the declared height, not of the box: the row the '
+          'wire was landed on has not moved, only the room below it has',
+    );
   });
 
   testWidgets('a press off the grip still moves the node', (tester) async {
@@ -131,7 +214,7 @@ void main() {
     await drag(
       tester,
       controller,
-      const Offset(298, 160),
+      const Offset(296, 216),
       const Offset(-150, 0),
     );
     expect(
@@ -143,7 +226,7 @@ void main() {
     await drag(
       tester,
       controller,
-      const Offset(298, 160),
+      const Offset(296, 216),
       const Offset(900, 0),
     );
     expect(controller.graph.node('a')!.width, 400, reason: 'nor past maxWidth');
@@ -154,14 +237,20 @@ void main() {
   ) async {
     final controller = await boot(tester, snap: 20);
 
-    await drag(tester, controller, const Offset(298, 160), const Offset(53, 0));
+    await drag(
+      tester,
+      controller,
+      const Offset(296, 216),
+      const Offset(53, 47),
+    );
     expect(controller.graph.node('a')!.width, 260);
+    expect(controller.graph.node('a')!.minHeight, 160);
   });
 
   testWidgets('a prototype that did not opt in has no grip', (tester) async {
     final controller = await boot(tester, type: 'fixed');
 
-    await drag(tester, controller, const Offset(298, 160), const Offset(60, 0));
+    await drag(tester, controller, const Offset(296, 216), const Offset(60, 0));
 
     final node = controller.graph.node('a')!;
     expect(node.width, 200);
@@ -174,11 +263,16 @@ void main() {
     await mouse.addPointer(location: Offset.zero);
     addTearDown(mouse.removePointer);
 
-    await mouse.moveTo(screen(tester, controller, const Offset(298, 160)));
+    await mouse.moveTo(screen(tester, controller, const Offset(296, 216)));
     await tester.pump();
     expect(
       RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
-      SystemMouseCursors.resizeLeftRight,
+      SystemMouseCursors.resizeUpLeftDownRight,
+    );
+    expect(
+      find.byType(CornerGrip),
+      findsOneWidget,
+      reason: 'the minimap\'s grip, drawn while the node is under the pointer',
     );
 
     await mouse.moveTo(screen(tester, controller, const Offset(200, 160)));
@@ -187,5 +281,27 @@ void main() {
       RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
       SystemMouseCursors.grab,
     );
+  });
+
+  test('the floor travels in the document, and only once it is set', () {
+    NodeGraph graph(double? floor) => NodeGraph(
+      nodes: <GraphNode>[
+        GraphNode(
+          id: 'a',
+          position: Offset.zero,
+          height: 100,
+          minHeight: floor,
+        ),
+      ],
+    );
+    const codec = NodeGraphCodec();
+
+    final plain = codec.encode(GraphDocument(graph: graph(null)));
+    expect(jsonEncode(plain), isNot(contains('minHeight')));
+    expect(codec.decode(plain).graph.node('a')!.minHeight, isNull);
+
+    final stretched = codec.encode(GraphDocument(graph: graph(240)));
+    expect(jsonEncode(stretched), contains('minHeight'));
+    expect(codec.decode(stretched).graph.node('a')!.minHeight, 240);
   });
 }

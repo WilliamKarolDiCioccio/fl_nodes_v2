@@ -183,7 +183,8 @@ class ConnectionLayout {
 
     final router = ConnectionRouter(
       graph: graph,
-      sizeOf: controller.layout.sizeOf,
+      // Anchors, not boxes — see `NodeEditorLayout.anchorSizeOf`.
+      sizeOf: controller.layout.anchorSizeOf,
       curvature: curvature,
     );
 

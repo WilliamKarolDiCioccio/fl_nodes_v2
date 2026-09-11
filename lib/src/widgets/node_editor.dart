@@ -845,20 +845,28 @@ class NodeEditorState extends State<NodeEditor> {
 
   // ------------------------------------------------------------- resizing
 
-  /// The node whose right edge is being dragged, with the width and the
+  /// The node whose corner is being dragged: the box it started at, and the
   /// pointer it started from.
-  ({String id, double width, double originX})? _resize;
+  ({String id, Size size, Offset origin})? _resize;
 
-  /// Starts widening or narrowing [node] as one undo step.
+  /// Starts resizing [node] from its bottom-right corner, as one undo step.
   ///
-  /// Width only. A node's height is what its prototype or its content says,
-  /// and every port anchor is a fraction of it; a height somebody dragged
-  /// would pull the handles off the wires already on them.
+  /// The width is the node's own. The height is a floor —
+  /// [GraphNode.minHeight] — under what the prototype or the content already
+  /// says: the corner adds room below the rows and never takes it away, so
+  /// the handles stay on the rows they were wired to. Dragged back to the
+  /// natural height or under it, the floor is cleared rather than left as a
+  /// number that happens to equal it, so a card that later loses a row is
+  /// free to shrink.
   void _handleNodeResizeStart(GraphNode node, Offset globalPosition) {
     if (_secondaryPressed) return;
     _focusNode.requestFocus();
     _controller.history.beginTransaction();
-    _resize = (id: node.id, width: node.width, originX: globalPosition.dx);
+    _resize = (
+      id: node.id,
+      size: _controller.layout.sizeOf(node),
+      origin: globalPosition,
+    );
   }
 
   void _handleNodeResizeUpdate(Offset globalPosition) {
@@ -868,17 +876,26 @@ class NodeEditorState extends State<NodeEditor> {
     final prototype = _controller.prototypes[node?.type ?? ''];
     if (node == null || prototype == null) return;
 
-    // Pointer deltas arrive in screen pixels; the width lives in scene units.
-    var width =
-        resize.width + (globalPosition.dx - resize.originX) / _viewport.scale;
+    // Pointer deltas arrive in screen pixels; the box lives in scene units.
+    final delta = (globalPosition - resize.origin) / _viewport.scale;
     final snap = _theme.snapToGrid;
-    if (snap > 0) width = (width / snap).roundToDouble() * snap;
-    width = width.clamp(
-      prototype.resizeFloor,
-      prototype.maxWidth ?? double.infinity,
+    double snapped(double value) =>
+        snap > 0 ? (value / snap).roundToDouble() * snap : value;
+
+    final width = snapped(
+      resize.size.width + delta.dx,
+    ).clamp(prototype.resizeFloor, prototype.maxWidth ?? double.infinity);
+    final natural = _controller.layout.anchorSizeOf(node).height;
+    final wanted = snapped(
+      resize.size.height + delta.dy,
+    ).clamp(natural, prototype.maxHeight ?? double.infinity);
+    final double? floor = wanted > natural ? wanted : null;
+
+    if (width == node.width && floor == node.minHeight) return;
+    _controller.updateNode(
+      resize.id,
+      (node) => node.copyWith(width: width).withMinHeight(floor),
     );
-    if (width == node.width) return;
-    _controller.updateNode(resize.id, (node) => node.copyWith(width: width));
   }
 
   void _handleNodeResizeEnd() {
@@ -1463,7 +1480,9 @@ class NodeEditorState extends State<NodeEditor> {
                     child: CustomPaint(
                       painter: PortsPainter(
                         nodes: drawn,
-                        sizeOf: _controller.layout.sizeOf,
+                        // Anchors, not boxes: a stretched card keeps its
+                        // handles on its rows.
+                        sizeOf: _controller.layout.anchorSizeOf,
                         connectedPorts: connected,
                         viewport: viewport,
                         theme: theme,

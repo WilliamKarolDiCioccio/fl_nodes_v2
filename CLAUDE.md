@@ -175,16 +175,25 @@ Create menu closes**. Only the drag ends at the drop: `_pendingSource` and
 `onClosed`, which also takes focus back — clears it however the menu went. A
 wire that vanished as the menu appeared read as the drop having failed.
 
-**A node's right edge resizes it when its prototype says `resizable`.** Width
-only — height is the prototype's or the content's, and every port anchor is a
-fraction of it. The grip is the last `NodeView.resizeGripWidth` of the node
-and carries **no recogniser of its own**: the node's one pan recogniser reads
-where the press landed and reports a resize or a drag, because two pans over
-one press is an arena question with no memorable answer. The strip's
-`MouseRegion` is only for the cursor and is translucent so a host control at
-the edge still gets its press. `_handleNodeResize*` on the editor bracket the
-drag in one history transaction, snap to `snapToGrid` and clamp to
-`resizeFloor`/`maxWidth`. `node_resize_test.dart`.
+**A node's bottom-right corner resizes it when its prototype says
+`resizable`.** The grip is `CornerGrip`, the minimap's own drawing, and the
+last `NodeView.resizeGripSize` square of the node; it carries **no recogniser
+of its own**. The node's one pan recogniser reads where the press landed and
+reports a resize or a drag, because two pans over one press is an arena
+question with no memorable answer. The corner's `MouseRegion` is only for the
+cursor and is translucent so a host control at the edge still gets its press.
+
+Width is the node's; height is a **floor**, `GraphNode.minHeight`. The box is
+`sizeOf`, the ports are placed against `anchorSizeOf` — the declared height,
+or the measured one — and the difference between the two is the room somebody
+dragged open below the rows. Anchors are fractions of the declared height on
+purpose: a card's handles must stay on the rows they were wired to however
+tall the card is made. A measured node is built inside a `ConstrainedBox` at
+its floor, so its content decides and the two sizes agree. A prototype that
+wants the room *used* reads the floor in `resolveHeight`. `_handleNodeResize*`
+bracket the drag in one history transaction, snap to `snapToGrid`, clamp to
+`resizeFloor`/`maxWidth`/`maxHeight` and clear the floor when the drag comes
+back to the natural height. `node_resize_test.dart`.
 
 ## Hooks a host can hang on
 

@@ -33,30 +33,41 @@ versions` group in `test/serialization_test.dart`, including that a document
 out of range on both axes reports the format one.
 
 
-### A node's right edge can be dragged
+### A node's corner can be dragged
 
 `NodePrototype.resizable` (`bool`, false), `minWidth` (`double?`, falls back
-to `defaultWidth`, then `GraphNode.defaultWidth`) and `maxWidth` (`double?`,
-no limit). A prototype that opts in gets a strip `NodeView.resizeGripWidth`
-(8) wide along its right edge: a press there widens or narrows the node
-instead of moving it, snapped to `snapToGrid` like a position, clamped to
-the prototype's bounds, and committed as **one** undo step. Width only. A
-node's height is what `resolveHeight` or its content says and every port
-anchor is a fraction of it — a height somebody dragged would pull the
-handles off the wires already on them. The output handles follow the edge
-for free, since anchors are fractions of the width.
+to `defaultWidth`, then `GraphNode.defaultWidth`), `maxWidth` and
+`maxHeight` (`double?`, no limit); `GraphNode.minHeight` (`double?`, null),
+written to the document as `minHeight` only once set. A prototype that opts
+in gets the minimap's grip in its bottom-right corner — `CornerGrip`, one
+drawing for both so a person who has found one knows the other, shown
+while the node is hovered or selected. A press there resizes instead of
+moving: both axes, snapped to `snapToGrid` like a position, clamped, and
+committed as **one** undo step.
+
+The width is the node's own. The height is a **floor**: what `resolveHeight`
+or the content says is the least the node can be, the corner only adds room
+below it, and dragged back to the natural height the floor is cleared rather
+than left as a number that happens to equal it — so a card that later loses
+a row is free to shrink. The box grows; the ports do not move. Every
+explicit anchor is a fraction of the *declared* height rather than of the
+box (`NodeEditorLayout.anchorSizeOf`, beside `sizeOf`), so a wire lands on
+the same row of a card however tall the card has been made. A measured node
+is laid out to its floor instead, so for it the two agree. A prototype that
+would rather use the room than leave it blank reads the floor in
+`resolveHeight` and answers with a height laid out to it.
 
 Off by default and per prototype rather than per node, because a host whose
 cards are laid out to one width has to decide that a wider card is still a
-right one before the editor offers it. `GraphNode.width` was already stored
-and honoured by the layout; nothing about the document changes.
+right one before the editor offers it.
 
 The grip takes no gesture of its own. The node's one pan recogniser decides
-what a press meant from where it landed — a second recogniser on a strip
-over the edge would contest the arena with the one underneath, and which of
-two pans wins a press is a rule nobody should have to remember. A
-`MouseRegion` on the strip is only for the cursor. `node_resize_test.dart`
-pins the drag, the undo, the clamp, the snap, the opt-in and the cursor.
+what a press meant from where it landed — a second recogniser on the corner
+would contest the arena with the one underneath, and which of two pans wins
+a press is a rule nobody should have to remember. A `MouseRegion` on the
+corner is only for the cursor. `node_resize_test.dart` pins the drag on
+each axis, the floor, the anchors, the undo, the clamp, the snap, the
+opt-in, the cursor and the document.
 
 ### The minimap's buttons sit against the edge
 
