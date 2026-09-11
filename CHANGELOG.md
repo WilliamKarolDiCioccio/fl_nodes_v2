@@ -33,6 +33,31 @@ versions` group in `test/serialization_test.dart`, including that a document
 out of range on both axes reports the format one.
 
 
+### A node's right edge can be dragged
+
+`NodePrototype.resizable` (`bool`, false), `minWidth` (`double?`, falls back
+to `defaultWidth`, then `GraphNode.defaultWidth`) and `maxWidth` (`double?`,
+no limit). A prototype that opts in gets a strip `NodeView.resizeGripWidth`
+(8) wide along its right edge: a press there widens or narrows the node
+instead of moving it, snapped to `snapToGrid` like a position, clamped to
+the prototype's bounds, and committed as **one** undo step. Width only. A
+node's height is what `resolveHeight` or its content says and every port
+anchor is a fraction of it — a height somebody dragged would pull the
+handles off the wires already on them. The output handles follow the edge
+for free, since anchors are fractions of the width.
+
+Off by default and per prototype rather than per node, because a host whose
+cards are laid out to one width has to decide that a wider card is still a
+right one before the editor offers it. `GraphNode.width` was already stored
+and honoured by the layout; nothing about the document changes.
+
+The grip takes no gesture of its own. The node's one pan recogniser decides
+what a press meant from where it landed — a second recogniser on a strip
+over the edge would contest the arena with the one underneath, and which of
+two pans wins a press is a rule nobody should have to remember. A
+`MouseRegion` on the strip is only for the cursor. `node_resize_test.dart`
+pins the drag, the undo, the clamp, the snap, the opt-in and the cursor.
+
 ### The minimap's buttons sit against the edge
 
 The gear and the fold button in the minimap's bar floated a third of the way

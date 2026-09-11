@@ -175,6 +175,17 @@ Create menu closes**. Only the drag ends at the drop: `_pendingSource` and
 `onClosed`, which also takes focus back — clears it however the menu went. A
 wire that vanished as the menu appeared read as the drop having failed.
 
+**A node's right edge resizes it when its prototype says `resizable`.** Width
+only — height is the prototype's or the content's, and every port anchor is a
+fraction of it. The grip is the last `NodeView.resizeGripWidth` of the node
+and carries **no recogniser of its own**: the node's one pan recogniser reads
+where the press landed and reports a resize or a drag, because two pans over
+one press is an arena question with no memorable answer. The strip's
+`MouseRegion` is only for the cursor and is translucent so a host control at
+the edge still gets its press. `_handleNodeResize*` on the editor bracket the
+drag in one history transaction, snap to `snapToGrid` and clamp to
+`resizeFloor`/`maxWidth`. `node_resize_test.dart`.
+
 ## Hooks a host can hang on
 
 `guard` and `onEdit` on the controller, both null by default. `_mutate` is the

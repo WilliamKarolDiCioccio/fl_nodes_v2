@@ -843,6 +843,50 @@ class NodeEditorState extends State<NodeEditor> {
     });
   }
 
+  // ------------------------------------------------------------- resizing
+
+  /// The node whose right edge is being dragged, with the width and the
+  /// pointer it started from.
+  ({String id, double width, double originX})? _resize;
+
+  /// Starts widening or narrowing [node] as one undo step.
+  ///
+  /// Width only. A node's height is what its prototype or its content says,
+  /// and every port anchor is a fraction of it; a height somebody dragged
+  /// would pull the handles off the wires already on them.
+  void _handleNodeResizeStart(GraphNode node, Offset globalPosition) {
+    if (_secondaryPressed) return;
+    _focusNode.requestFocus();
+    _controller.history.beginTransaction();
+    _resize = (id: node.id, width: node.width, originX: globalPosition.dx);
+  }
+
+  void _handleNodeResizeUpdate(Offset globalPosition) {
+    final resize = _resize;
+    if (resize == null) return;
+    final node = _controller.graph.nodes[resize.id];
+    final prototype = _controller.prototypes[node?.type ?? ''];
+    if (node == null || prototype == null) return;
+
+    // Pointer deltas arrive in screen pixels; the width lives in scene units.
+    var width =
+        resize.width + (globalPosition.dx - resize.originX) / _viewport.scale;
+    final snap = _theme.snapToGrid;
+    if (snap > 0) width = (width / snap).roundToDouble() * snap;
+    width = width.clamp(
+      prototype.resizeFloor,
+      prototype.maxWidth ?? double.infinity,
+    );
+    if (width == node.width) return;
+    _controller.updateNode(resize.id, (node) => node.copyWith(width: width));
+  }
+
+  void _handleNodeResizeEnd() {
+    if (_resize == null) return;
+    _controller.history.commitTransaction();
+    _resize = null;
+  }
+
   // --------------------------------------------------- connection gestures
 
   /// Starts dragging a wire out of [ref].
@@ -1703,6 +1747,11 @@ class _NodeSlot {
     }
   }
 
+  void _onResizeStart(Offset globalPosition) {
+    final node = _liveNode;
+    if (node != null) _editor._handleNodeResizeStart(node, globalPosition);
+  }
+
   Widget build(GraphNode node, NodeEditorTheme theme) {
     final editor = _editor;
     final selected = editor._controller.selection.containsNode(nodeId);
@@ -1759,6 +1808,13 @@ class _NodeSlot {
         onDragStart: _onDragStart,
         onDragUpdate: _editor._handleNodeDragUpdate,
         onDragEnd: _editor._handleNodeDragEnd,
+        // A fact about the kind of node, read off the registry: the slot's
+        // cache already keys on the node, and the registry does not change
+        // under a controller.
+        resizable: editor._controller.prototypes[node.type]?.resizable ?? false,
+        onResizeStart: _onResizeStart,
+        onResizeUpdate: _editor._handleNodeResizeUpdate,
+        onResizeEnd: _editor._handleNodeResizeEnd,
       ),
     );
   }
