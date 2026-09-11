@@ -33,6 +33,104 @@ versions` group in `test/serialization_test.dart`, including that a document
 out of range on both axes reports the format one.
 
 
+### A node's corner can be dragged
+
+`NodePrototype.resizable` (`bool`, false), `minWidth` (`double?`, falls back
+to `defaultWidth`, then `GraphNode.defaultWidth`), `maxWidth` and
+`maxHeight` (`double?`, no limit); `GraphNode.minHeight` (`double?`, null),
+written to the document as `minHeight` only once set. A prototype that opts
+in gets the minimap's grip in its bottom-right corner — `CornerGrip`, one
+drawing for both so a person who has found one knows the other, shown
+while the node is hovered or selected. A press there resizes instead of
+moving: both axes, snapped to `snapToGrid` like a position, clamped, and
+committed as **one** undo step.
+
+The width is the node's own. The height is a **floor**: what `resolveHeight`
+or the content says is the least the node can be, the corner only adds room
+below it, and dragged back to the natural height the floor is cleared rather
+than left as a number that happens to equal it — so a card that later loses
+a row is free to shrink. The box grows; the ports do not move. Every
+explicit anchor is a fraction of the *declared* height rather than of the
+box (`NodeEditorLayout.anchorSizeOf`, beside `sizeOf`), so a wire lands on
+the same row of a card however tall the card has been made. A measured node
+is laid out to its floor instead, so for it the two agree. A prototype that
+would rather use the room than leave it blank reads the floor in
+`resolveHeight` and answers with a height laid out to it.
+
+Off by default and per prototype rather than per node, because a host whose
+cards are laid out to one width has to decide that a wider card is still a
+right one before the editor offers it.
+
+The grip takes no gesture of its own. The node's one pan recogniser decides
+what a press meant from where it landed — a second recogniser on the corner
+would contest the arena with the one underneath, and which of two pans wins
+a press is a rule nobody should have to remember. A `MouseRegion` on the
+corner is only for the cursor. `node_resize_test.dart` pins the drag on
+each axis, the floor, the anchors, the undo, the clamp, the snap, the
+opt-in, the cursor and the document.
+
+### The minimap's buttons sit against the edge
+
+The gear and the fold button in the minimap's bar floated a third of the way
+in from the right edge, at a distance that changed with the panel's width.
+The title was a `Flexible` beside a `Spacer`, and the two split the free
+width between them: the half the title did not fill sat as a gap *before*
+the spacer. The title is an `Expanded` now and the spacer is gone, and the
+trailing inset matches the grip's 6 on the left. On a 320-wide panel the
+gap was 46.75 px; `minimap_test.dart` pins it under 8 and equal to the
+grip's.
+
+### A submenu that slides instead of flipping
+
+`NodeSubmenuButton`, used by `buildMenuChildren` for every `NodeMenuEntry`
+with children in place of Material's `SubmenuButton`. Material lays a
+submenu out with the delegate a menu bar uses: a panel that would run off
+the bottom of the window is moved to end at the *top* of its row whenever it
+fits there. For a cascade opened at a click point that leaves the panel
+entirely above the row that opened it, and the pointer's path up to it
+crosses the sibling rows — each of which takes focus on hover and closes the
+open child. Near the bottom of the window the three-level Create menu was
+unreachable by mouse.
+
+The row is still a `MenuItemButton`, the linkage is `RawMenuAnchor`'s own —
+a click elsewhere, Escape and choosing an entry still close the whole tree —
+and the panel is dressed from `MenuTheme`. What is ours is the placement: to
+the right of the row, top-aligned with it, slid up only as far as the window
+demands and never off the row's band, flipped to the left only when there is
+no room to the right. It opens on the *focus a hover brings* rather than on
+the hover itself, because `MenuItemButton` reports the hover before it takes
+focus and taking focus is what closes the previous row's children — which,
+opened a moment earlier, would include this panel. Right on a row walks in,
+left inside a panel walks out to the row, and a row nested in a panel hands
+left up to that panel rather than walking focus sideways.
+`submenu_placement_test.dart` pins the placement, the hover crossing, the
+sibling close, the arrows and the two ways the tree closes.
+
+**And the whole cascade opens one way.** `CascadeSide`, decided once by
+`NodeEditorMenuHostState` when the menu opens and read by every panel under
+it. Each panel deciding for itself — right when it fits, left when it does
+not — had the third level flip to the left of the second when it was the
+wider one, so a cascade zig-zagged across the screen and its deepest panel
+landed over the root. The side is chosen from the **widest chain** of
+panels the tree could open, estimated from the labels with the menu's own
+text style (`estimateCascadeWidth`, erring wide) since a panel is not laid
+out until it opens; a panel that cannot fit on the side it was told still
+goes to the other, so nothing ever leaves the screen. Pinned by the cascade
+cases in the same test.
+
+### The wire stays while the Create menu is up
+
+With `NodeEditorMenus.createOnDrop` on, the pending wire was cleared the
+moment the Create menu opened at the drop point, so the person saw their wire
+vanish and a menu appear — which read as the drop having failed, not as the
+next step of it. `_handlePortDragEnd` now keeps the `PendingConnection` drawn,
+frozen where it was let go, until the menu closes: chosen, dismissed or
+clicked away. Only the drag ends at the drop — the source and target are
+cleared — so a pointer over the menu cannot go on steering a wire nobody is
+holding. `NodeEditorMenuHostState.open` returns whether a menu actually
+opened, which is the cue. `drop_to_create_test.dart` pins both the holding and
+the letting go.
+
 ### How wide a caption can get
 
 `ConnectionLabel.maxWidth` (160) was private and is not any more. A host that

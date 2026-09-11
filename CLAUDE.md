@@ -159,6 +159,47 @@ point has no button to focus either, so the anchor focuses itself on open and
 hands off to the first choosable entry; without that the arrow keys never reach
 the menu and Escape reaches the canvas instead.
 
+**Submenus are `NodeSubmenuButton`, not Material's `SubmenuButton`.** Material
+flips a submenu that would run off the bottom to end at the *top* of its row,
+and a panel above its row is one the pointer cannot reach without crossing the
+siblings that close it on hover. Ours slides. Everything else stays Material's
+— the row, the items, the `RawMenuAnchor` parent/child linkage that makes
+Escape and an outside click close the tree — and the one subtle thing in it
+is *when* it opens: on the focus a hover brings, not on the hover, because
+`MenuItemButton` reports the hover before it takes focus and taking focus is
+what closes the previous row's children. The **side** is one answer for the
+whole tree, `CascadeSide`, chosen at the root from the widest chain the
+entries could open — estimated from the labels, since nothing is laid out
+until it opens — because panels deciding one by one zig-zagged: right, then
+left over the root when the third level was the wide one.
+`submenu_placement_test.dart`.
+
+A wire dropped on empty canvas with `createOnDrop` on **stays drawn until the
+Create menu closes**. Only the drag ends at the drop: `_pendingSource` and
+`_pendingTarget` go, `_pending` stays, and `_handleMenuClosed` — the host's
+`onClosed`, which also takes focus back — clears it however the menu went. A
+wire that vanished as the menu appeared read as the drop having failed.
+
+**A node's bottom-right corner resizes it when its prototype says
+`resizable`.** The grip is `CornerGrip`, the minimap's own drawing, and the
+last `NodeView.resizeGripSize` square of the node; it carries **no recogniser
+of its own**. The node's one pan recogniser reads where the press landed and
+reports a resize or a drag, because two pans over one press is an arena
+question with no memorable answer. The corner's `MouseRegion` is only for the
+cursor and is translucent so a host control at the edge still gets its press.
+
+Width is the node's; height is a **floor**, `GraphNode.minHeight`. The box is
+`sizeOf`, the ports are placed against `anchorSizeOf` — the declared height,
+or the measured one — and the difference between the two is the room somebody
+dragged open below the rows. Anchors are fractions of the declared height on
+purpose: a card's handles must stay on the rows they were wired to however
+tall the card is made. A measured node is built inside a `ConstrainedBox` at
+its floor, so its content decides and the two sizes agree. A prototype that
+wants the room *used* reads the floor in `resolveHeight`. `_handleNodeResize*`
+bracket the drag in one history transaction, snap to `snapToGrid`, clamp to
+`resizeFloor`/`maxWidth`/`maxHeight` and clear the floor when the drag comes
+back to the natural height. `node_resize_test.dart`.
+
 ## Hooks a host can hang on
 
 `guard` and `onEdit` on the controller, both null by default. `_mutate` is the
@@ -422,6 +463,13 @@ panel zooms the canvas underneath it and a hover across it picks ports it is
 not showing. The rect is reported *by* the panel rather than recomputed, since
 resolving it means knowing the alignment default and the clamp, and two copies
 of that arithmetic is how a guard stops guarding.
+
+**The bar's title is an `Expanded` with no `Spacer` after it.** A `Flexible`
+title beside a `Spacer` splits the free width between them, and the half the
+title does not fill sits as a gap *before* the spacer — the gear and the fold
+button floated a third of the way in from the right edge, at a distance that
+moved with the panel's width. Measured at 46.75 px on a 320-wide panel;
+`minimap_test.dart` pins the buttons to the edge.
 
 **The action bar carries no tap recogniser at all**, and that is deliberate.
 `GroupView._Handle` had to synthesise its own double tap because it needed

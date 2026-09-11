@@ -124,6 +124,10 @@ class NodePrototype {
     this.category,
     this.description,
     this.defaultWidth,
+    this.resizable = false,
+    this.minWidth,
+    this.maxWidth,
+    this.maxHeight,
     this.fields = const <FieldFamily>[],
     this.ports = const <PortFamily>[],
     this.inheritFields = NodeFields.seedAndPrune,
@@ -167,6 +171,35 @@ class NodePrototype {
   /// a width the app user has since chosen is theirs. It only saves a palette
   /// from having to know a number that belongs to the prototype.
   final double? defaultWidth;
+
+  /// Whether a person may drag a node's bottom-right corner to resize it.
+  ///
+  /// Off by default: a host whose cards are laid out to one width — port
+  /// rows measured against it, a preview column sized to it — has to decide
+  /// that a wider card is still a right one before the editor offers it.
+  ///
+  /// The width is the node's own. The height is a **floor**,
+  /// [GraphNode.minHeight]: what [resolveHeight] or the content says is the
+  /// least the node can be, the corner can only add room below it, and the
+  /// ports stay on their rows because every anchor is a fraction of the
+  /// declared height rather than of the box. A prototype that would rather
+  /// use the room than leave it blank reads the floor in [resolveHeight].
+  final bool resizable;
+
+  /// The narrowest a resize may leave the node, or [defaultWidth] — else
+  /// [GraphNode.defaultWidth] — when unset. A card cannot be dragged
+  /// narrower than the width it was designed at.
+  final double? minWidth;
+
+  /// The widest, or no limit when unset.
+  final double? maxWidth;
+
+  /// The tallest a resize may make the node, or no limit when unset. The
+  /// floor is always what the node already is.
+  final double? maxHeight;
+
+  /// [minWidth] as a resize reads it.
+  double get resizeFloor => minWidth ?? defaultWidth ?? GraphNode.defaultWidth;
 
   final List<FieldFamily> fields;
   final List<PortFamily> ports;

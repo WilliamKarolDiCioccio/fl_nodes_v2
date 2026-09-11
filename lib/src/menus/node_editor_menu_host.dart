@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'node_menu_entry.dart';
+import 'node_submenu_button.dart';
 
 /// Renders [NodeMenuEntry] lists as a Material menu anchored to a point.
 ///
@@ -11,8 +12,10 @@ import 'node_menu_entry.dart';
 /// anywhere on it count as "inside", and the menu could then only be dismissed
 /// with Escape.
 ///
-/// Everything else — submenus, keyboard traversal, the app's [MenuTheme] —
-/// comes from the Material widgets.
+/// Everything else — keyboard traversal, the app's [MenuTheme] — comes from
+/// the Material widgets. Submenus are [NodeSubmenuButton], which is Material's
+/// row over a panel that slides to stay on screen rather than flipping above
+/// its row; see there for why.
 class NodeEditorMenuHost extends StatefulWidget {
   const NodeEditorMenuHost({
     super.key,
@@ -44,6 +47,7 @@ class NodeEditorMenuHostState extends State<NodeEditorMenuHost> {
 
   List<NodeMenuEntry> _entries = const <NodeMenuEntry>[];
   Offset _at = Offset.zero;
+  CascadeSide _side = CascadeSide.right;
 
   @override
   void dispose() {
@@ -55,15 +59,43 @@ class NodeEditorMenuHostState extends State<NodeEditorMenuHost> {
   /// host is a child of.
   ///
   /// Does nothing when there is nothing to show — a build hook that filters
-  /// everything away should leave no empty popup behind.
-  void open(List<NodeMenuEntry> entries, Offset position) {
-    if (entries.isEmpty) return;
+  /// everything away should leave no empty popup behind — and says so, for a
+  /// caller that has something to hold on screen only while a menu is up.
+  bool open(List<NodeMenuEntry> entries, Offset position) {
+    if (entries.isEmpty) return false;
     setState(() {
       _entries = entries;
       _at = position;
+      _side = _sideFor(entries, position);
     });
     _anchorFocus.requestFocus();
     widget.controller.open();
+    return true;
+  }
+
+  /// Which way the submenus should cascade from a menu opened at [position].
+  ///
+  /// Decided **once, for the whole tree, from its widest chain**, and handed
+  /// down through [CascadeSide]. Each submenu deciding for itself — right
+  /// when it fits, left when it does not — had the third level flip to the
+  /// left of the second when it was the wider one, so a cascade zig-zagged
+  /// across the screen and the deepest panel landed over the root. The widths
+  /// are estimated from the labels with the menu's own text style rather than
+  /// measured, because a panel is not laid out until it is opened; the
+  /// estimate errs wide, and the panel's own layout still keeps it on screen
+  /// whichever way it was told to go.
+  CascadeSide _sideFor(List<NodeMenuEntry> entries, Offset position) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return CascadeSide.right;
+    final style =
+        MenuButtonTheme.of(context).style?.textStyle?.resolve(const {}) ??
+        Theme.of(context).textTheme.labelLarge ??
+        DefaultTextStyle.of(context).style;
+    final origin = box.localToGlobal(position);
+    final reach = origin.dx + estimateCascadeWidth(entries, style);
+    // The same margin the panels keep when they are laid out.
+    final room = MediaQuery.sizeOf(context).width - NodeSubmenuButton.margin;
+    return reach <= room ? CascadeSide.right : CascadeSide.left;
   }
 
   void close() => widget.controller.close();
@@ -73,18 +105,60 @@ class NodeEditorMenuHostState extends State<NodeEditorMenuHost> {
     return Positioned(
       left: _at.dx,
       top: _at.dy,
-      child: MenuAnchor(
-        controller: widget.controller,
-        childFocusNode: _anchorFocus,
-        // The click that dismisses is spent dismissing: it must not also land
-        // on the canvas and move the selection out from under the menu.
-        consumeOutsideTap: true,
-        onClose: widget.onClosed,
-        menuChildren: buildMenuChildren(_entries, autofocusFirst: true),
-        child: Focus(focusNode: _anchorFocus, child: const SizedBox.shrink()),
+      child: CascadeSide.provide(
+        side: _side,
+        child: MenuAnchor(
+          controller: widget.controller,
+          childFocusNode: _anchorFocus,
+          // The click that dismisses is spent dismissing: it must not also land
+          // on the canvas and move the selection out from under the menu.
+          consumeOutsideTap: true,
+          onClose: widget.onClosed,
+          menuChildren: buildMenuChildren(_entries, autofocusFirst: true),
+          child: Focus(focusNode: _anchorFocus, child: const SizedBox.shrink()),
+        ),
       ),
     );
   }
+}
+
+/// How wide the widest chain of panels under [entries] is, root included.
+///
+/// A panel is as wide as its widest row; a chain is a panel plus the widest
+/// chain under any of its submenus. The row arithmetic is Material's
+/// `MenuItemButton` at M3 metrics — 12 of padding a side, a leading icon of
+/// 24 with its gap, a trailing arrow of 24 with its gap, the shortcut's own
+/// text — rounded up rather than down, since an estimate that ran short
+/// would put a cascade on the side it cannot fit.
+@visibleForTesting
+double estimateCascadeWidth(List<NodeMenuEntry> entries, TextStyle style) {
+  double textWidth(String text) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  var panel = 0.0;
+  var deepest = 0.0;
+  for (final entry in entries) {
+    if (entry.isSeparator) continue;
+    var row = 24 + textWidth(entry.label);
+    if (entry.icon != null) row += 36;
+    if (entry.isSubmenu) {
+      row += 36;
+      final below = estimateCascadeWidth(entry.children, style);
+      if (below > deepest) deepest = below;
+    } else if (entry.shortcut != null) {
+      row += 24 + textWidth(entry.shortcut!.debugDescribeKeys());
+    }
+    if (row > panel) panel = row;
+  }
+  return panel + deepest;
 }
 
 /// Turns entries into Material menu widgets, recursively.
@@ -111,7 +185,10 @@ List<Widget> buildMenuChildren(
       if (entry.isSeparator)
         const Divider(height: 8)
       else if (entry.isSubmenu)
-        SubmenuButton(
+        // Not Material's SubmenuButton: its panel flips above the row when
+        // the window runs out below, and a panel above its row is one the
+        // pointer cannot reach without crossing the siblings that close it.
+        NodeSubmenuButton(
           leadingIcon: entry.icon == null ? null : Icon(entry.icon, size: 18),
           menuChildren: buildMenuChildren(entry.children),
           child: Text(entry.label),

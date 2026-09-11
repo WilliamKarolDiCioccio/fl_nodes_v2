@@ -11,6 +11,7 @@ import 'minimap_controller.dart';
 import 'minimap_painter.dart';
 import 'minimap_palette.dart';
 import 'minimap_scene.dart';
+import '../widgets/corner_grip.dart';
 
 /// The minimap, as a panel floating over the canvas.
 ///
@@ -366,7 +367,14 @@ class _MinimapBar extends StatelessWidget {
               const SizedBox(width: 6),
               Icon(Icons.drag_indicator, size: 15, color: palette.ink),
               const SizedBox(width: 2),
-              Flexible(
+              // Expanded, and no Spacer after it. A `Flexible` title beside
+              // a `Spacer` splits the free width between them, and the half
+              // the title does not fill sits as a gap *before* the spacer —
+              // so the gear and the fold button floated a third of the way
+              // in from the right edge, at a distance that changed with the
+              // panel's width. The title takes all of it and the buttons sit
+              // against the edge.
+              Expanded(
                 child: Text(
                   config.title,
                   maxLines: 1,
@@ -378,7 +386,6 @@ class _MinimapBar extends StatelessWidget {
                   ),
                 ),
               ),
-              const Spacer(),
               _MinimapSettingsMenu(
                 config: config,
                 minimap: minimap,
@@ -395,7 +402,9 @@ class _MinimapBar extends StatelessWidget {
                 color: palette.ink,
                 onPressed: minimap.toggleMinimised,
               ),
-              const SizedBox(width: 2),
+              // With the button's own 2 of padding, the same 6 the grip
+              // keeps from the left edge.
+              const SizedBox(width: 4),
             ],
           ),
         ),
@@ -566,8 +575,6 @@ class _MinimapGrip extends StatelessWidget {
     required this.onUpdate,
   });
 
-  static const double size = 14;
-
   final Color color;
   final GestureDragStartCallback onStart;
   final GestureDragUpdateCallback onUpdate;
@@ -580,34 +587,7 @@ class _MinimapGrip extends StatelessWidget {
       dragStartBehavior: DragStartBehavior.down,
       onPanStart: onStart,
       onPanUpdate: onUpdate,
-      child: CustomPaint(
-        size: const Size.square(size),
-        painter: _GripPainter(color),
-      ),
+      child: CornerGrip(color: color),
     ),
   );
-}
-
-class _GripPainter extends CustomPainter {
-  const _GripPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round;
-    for (final inset in <double>[3, 7]) {
-      canvas.drawLine(
-        Offset(size.width - 2, size.height - inset),
-        Offset(size.width - inset, size.height - 2),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_GripPainter old) => old.color != color;
 }

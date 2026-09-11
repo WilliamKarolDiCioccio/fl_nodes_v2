@@ -375,6 +375,40 @@ void main() {
     expect(mapFinder, findsOneWidget);
   });
 
+  testWidgets('the bar buttons sit against the right edge, whatever the '
+      'width', (tester) async {
+    final minimap = MinimapController()..size = const Size(320, 200);
+    addTearDown(minimap.dispose);
+    await tester.pumpWidget(harness(boot(), minimapController: minimap));
+
+    final frame = tester.getRect(
+      find.byKey(const ValueKey<String>('minimap.frame')),
+    );
+    final fold = tester.getRect(find.byIcon(Icons.close));
+    final gear = tester.getRect(find.byIcon(Icons.settings));
+    final grip = tester.getRect(find.byIcon(Icons.drag_indicator));
+
+    expect(
+      frame.right - fold.right,
+      lessThan(8),
+      reason:
+          'a Flexible title beside a Spacer split the free width between '
+          'them, and the half the title did not fill sat as a gap before the '
+          'spacer — the buttons floated a third of the way in from the edge',
+    );
+    expect(
+      frame.right - fold.right,
+      moreOrLessEquals(grip.left - frame.left, epsilon: 1),
+      reason: 'the same inset the grip keeps from the left',
+    );
+    expect(gear.right, lessThanOrEqualTo(fold.left));
+    expect(
+      gear.center.dy,
+      moreOrLessEquals(fold.center.dy, epsilon: 0.5),
+      reason: 'on one line',
+    );
+  });
+
   testWidgets('dragging the bar moves the panel and never the camera', (
     tester,
   ) async {

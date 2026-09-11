@@ -843,6 +843,67 @@ class NodeEditorState extends State<NodeEditor> {
     });
   }
 
+  // ------------------------------------------------------------- resizing
+
+  /// The node whose corner is being dragged: the box it started at, and the
+  /// pointer it started from.
+  ({String id, Size size, Offset origin})? _resize;
+
+  /// Starts resizing [node] from its bottom-right corner, as one undo step.
+  ///
+  /// The width is the node's own. The height is a floor —
+  /// [GraphNode.minHeight] — under what the prototype or the content already
+  /// says: the corner adds room below the rows and never takes it away, so
+  /// the handles stay on the rows they were wired to. Dragged back to the
+  /// natural height or under it, the floor is cleared rather than left as a
+  /// number that happens to equal it, so a card that later loses a row is
+  /// free to shrink.
+  void _handleNodeResizeStart(GraphNode node, Offset globalPosition) {
+    if (_secondaryPressed) return;
+    _focusNode.requestFocus();
+    _controller.history.beginTransaction();
+    _resize = (
+      id: node.id,
+      size: _controller.layout.sizeOf(node),
+      origin: globalPosition,
+    );
+  }
+
+  void _handleNodeResizeUpdate(Offset globalPosition) {
+    final resize = _resize;
+    if (resize == null) return;
+    final node = _controller.graph.nodes[resize.id];
+    final prototype = _controller.prototypes[node?.type ?? ''];
+    if (node == null || prototype == null) return;
+
+    // Pointer deltas arrive in screen pixels; the box lives in scene units.
+    final delta = (globalPosition - resize.origin) / _viewport.scale;
+    final snap = _theme.snapToGrid;
+    double snapped(double value) =>
+        snap > 0 ? (value / snap).roundToDouble() * snap : value;
+
+    final width = snapped(
+      resize.size.width + delta.dx,
+    ).clamp(prototype.resizeFloor, prototype.maxWidth ?? double.infinity);
+    final natural = _controller.layout.anchorSizeOf(node).height;
+    final wanted = snapped(
+      resize.size.height + delta.dy,
+    ).clamp(natural, prototype.maxHeight ?? double.infinity);
+    final double? floor = wanted > natural ? wanted : null;
+
+    if (width == node.width && floor == node.minHeight) return;
+    _controller.updateNode(
+      resize.id,
+      (node) => node.copyWith(width: width).withMinHeight(floor),
+    );
+  }
+
+  void _handleNodeResizeEnd() {
+    if (_resize == null) return;
+    _controller.history.commitTransaction();
+    _resize = null;
+  }
+
   // --------------------------------------------------- connection gestures
 
   /// Starts dragging a wire out of [ref].
@@ -900,7 +961,19 @@ class NodeEditorState extends State<NodeEditor> {
         widget.onConnectionCreated?.call(_controller.graph.connections[id]!);
       }
     } else if (source != null && pending != null) {
-      _handleConnectionDrop(source, pending.pointer);
+      if (_handleConnectionDrop(source, pending.pointer)) {
+        // The Create menu is up at the drop point. The wire stays drawn,
+        // frozen where it was let go, until the menu closes — the gesture is
+        // not over from where the person sits, and a wire that vanished the
+        // moment the menu appeared read as the drop having failed. Only the
+        // drag ends here: the source and target go, so a pointer moving over
+        // the menu cannot go on steering a wire nobody is holding.
+        setState(() {
+          _pendingSource = null;
+          _pendingTarget = null;
+        });
+        return;
+      }
     }
     _clearPendingConnection();
   }
@@ -910,11 +983,14 @@ class NodeEditorState extends State<NodeEditor> {
   /// Either the host's hook, or — when `createOnDrop` is on — the Create menu
   /// at the drop point, which then wires up whatever it made. Never both: one
   /// gesture must not be able to produce two nodes.
-  void _handleConnectionDrop(PortRef source, Offset scenePosition) {
+  ///
+  /// True when the menu was opened, which is the caller's cue to keep the
+  /// wire on screen until it closes.
+  bool _handleConnectionDrop(PortRef source, Offset scenePosition) {
     final menus = widget.contextMenus;
     if (menus == null || !menus.createOnDrop) {
       widget.onConnectionDropped?.call(source, scenePosition);
-      return;
+      return false;
     }
 
     final request = _menuRequest(NodeMenuCanvasTarget(scenePosition));
@@ -931,7 +1007,21 @@ class NodeEditorState extends State<NodeEditor> {
       _controller.history.commitTransaction();
     });
 
-    _menuHostKey.currentState?.open(entries, _viewport.toScreen(scenePosition));
+    final host = _menuHostKey.currentState;
+    if (host == null) return false;
+    return host.open(entries, _viewport.toScreen(scenePosition));
+  }
+
+  /// The menu has gone, however it went: chosen, dismissed, or closed by a
+  /// click elsewhere.
+  ///
+  /// Two things, and both belong to the editor rather than to the host widget:
+  /// the canvas takes focus back, since its shortcuts are gated on holding it
+  /// and the menu took it; and a wire held on screen for a create-on-drop is
+  /// let go of — the real wire, if one was made, is in the graph by now.
+  void _handleMenuClosed() {
+    _focusNode.requestFocus();
+    _clearPendingConnection();
   }
 
   void _clearPendingConnection() {
@@ -1390,7 +1480,9 @@ class NodeEditorState extends State<NodeEditor> {
                     child: CustomPaint(
                       painter: PortsPainter(
                         nodes: drawn,
-                        sizeOf: _controller.layout.sizeOf,
+                        // Anchors, not boxes: a stretched card keeps its
+                        // handles on its rows.
+                        sizeOf: _controller.layout.anchorSizeOf,
                         connectedPorts: connected,
                         viewport: viewport,
                         theme: theme,
@@ -1422,9 +1514,7 @@ class NodeEditorState extends State<NodeEditor> {
                 NodeEditorMenuHost(
                   key: _menuHostKey,
                   controller: _menuController,
-                  // Shortcuts are gated on the canvas holding primary focus,
-                  // and the menu takes it while it is open.
-                  onClosed: _focusNode.requestFocus,
+                  onClosed: _handleMenuClosed,
                 ),
                 // After the menu host, because a Stack hit-tests back to
                 // front and the panel wants its presses. Costs nothing to be
@@ -1676,6 +1766,11 @@ class _NodeSlot {
     }
   }
 
+  void _onResizeStart(Offset globalPosition) {
+    final node = _liveNode;
+    if (node != null) _editor._handleNodeResizeStart(node, globalPosition);
+  }
+
   Widget build(GraphNode node, NodeEditorTheme theme) {
     final editor = _editor;
     final selected = editor._controller.selection.containsNode(nodeId);
@@ -1732,6 +1827,13 @@ class _NodeSlot {
         onDragStart: _onDragStart,
         onDragUpdate: _editor._handleNodeDragUpdate,
         onDragEnd: _editor._handleNodeDragEnd,
+        // A fact about the kind of node, read off the registry: the slot's
+        // cache already keys on the node, and the registry does not change
+        // under a controller.
+        resizable: editor._controller.prototypes[node.type]?.resizable ?? false,
+        onResizeStart: _onResizeStart,
+        onResizeUpdate: _editor._handleNodeResizeUpdate,
+        onResizeEnd: _editor._handleNodeResizeEnd,
       ),
     );
   }
