@@ -476,6 +476,40 @@ An unknown node type is not an error. It decodes to an ordinary `GraphNode` and
 round-trips untouched — a document you cannot open is worse than a node you
 cannot edit.
 
+**There are two version axes and they are not interchangeable.** `version` is
+this package's and governs the envelope: nodes, connections, groups, ports.
+`schema` is the *host's* and governs what a node's `type` means and what the
+keys in its `data` mean — which the package carries and never interprets, so it
+is the only axis that can express a host's field being renamed or two being
+folded into one. The line to hold: nothing in `lib/` may read a `schema` number
+to decide anything, or the second axis has become a slower copy of the first.
+
+The predecessor had both and the rewrite kept only the field. `app` survived as
+a string that is written, read back and never interpreted, and the chain stayed
+keyed on the package's integer — so `upgrade` ran `from` to `target` with
+`target` always `1`, and a host-supplied `migrations` chain was unreachable
+code rather than merely unused. That is what `schemaVersion` and
+`schemaMigrations` put back.
+
+Three rules the gates keep, in `decode`:
+
+- **The format gate runs first, and so does the format migration.** The
+  package's step normalises the envelope the host's step then walks; reversed,
+  a host migration is handed a shape this build has already stopped believing
+  in. A document out of range on both axes reports the format one, and there is
+  a test that says so.
+- **A missing `schema` reads as `legacySchemaVersion` (1)**, never as an error.
+  Every document written before a host declared an axis has no key, which is all
+  of them the first time it does — refusing those would break exactly the files
+  the axis exists to carry forward.
+- **A null `schemaVersion` is not the same as 1.** It means the host has no
+  opinion, so a `schema` key is read, reported on the document and written back
+  untouched rather than gated. `encode` prefers `document.schemaVersion` over
+  the codec's for that reason, the way it already prefers `document.packageVersion`.
+
+`_packageStamp` duplicates the version in `pubspec.yaml` by hand and nothing
+checks it. Bump both together.
+
 ## Testing notes
 
 - `testWidgets` **enables semantics by default** (`semanticsEnabled: true`); an

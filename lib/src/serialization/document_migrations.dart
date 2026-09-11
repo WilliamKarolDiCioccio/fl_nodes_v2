@@ -26,23 +26,31 @@ abstract final class GraphDocumentMigrations {
   ///
   /// Throws naming the exact step that is missing, rather than handing a
   /// half-migrated document to a reader that will misread it.
+  ///
+  /// [label] and [key] name the axis in that failure — the prose and the
+  /// document key it reads from. A document has two axes, this package's
+  /// `format` version and the host's `schema` version, and telling somebody
+  /// the format is at 3 when it is the schema that is at 3 sends them looking
+  /// on the wrong side of the boundary.
   static Map<String, Object?> upgrade(
     Map<String, Object?> document, {
     required int from,
     required int target,
     Map<int, GraphDocumentMigration> chain = standard,
+    String label = 'format',
+    String key = 'version',
   }) {
     var current = document;
     for (var version = from; version < target; version++) {
       final migration = chain[version];
       if (migration == null) {
         throw GraphDocumentVersionException(
-          'This document is in format version $from and this build reads '
+          'This document is in $label version $from and this build reads '
           'version $target, but there is no migration from version $version '
           'to ${version + 1}.',
           found: from,
           supported: target,
-          path: const <Object>['version'],
+          path: <Object>[key],
         );
       }
       current = migration(current);

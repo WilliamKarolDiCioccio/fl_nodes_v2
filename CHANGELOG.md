@@ -1,5 +1,38 @@
 ## Unreleased
 
+### The host's own format version
+
+`NodeGraphCodec.schemaVersion` (`int?`, null) and `NodeGraphCodec.schemaMigrations`
+(`Map<int, GraphDocumentMigration>`, empty), stamped into a document as
+`schema` and reported on `GraphDocument.schemaVersion`.
+
+A document already carried `version`, and it governs the envelope: nodes,
+connections, groups, ports — the shape this package owns. It could never govern
+what a *host* means by a node's `type` or by the keys in its `data`, because
+the package carries both and interprets neither. So a host that renamed a field
+had no version to bump and no chain to hang a migration on: `upgrade` ran
+`from` to `target` with `target` always `NodeGraphCodec.version`, which made a
+host-supplied `migrations` chain unreachable rather than merely unused. The
+predecessor had two axes and this is the second one back.
+
+The two move on different clocks, which is the whole point of their being two.
+Both gates run on the way in and the format's runs first — its migration
+normalises the envelope the host's then walks — and `decode` refuses a
+`schema` from the future the way it already refused a `version`, saying
+*schema* rather than *format* so nobody goes looking on the wrong side of the
+boundary. A missing `schema` reads as `legacySchemaVersion` (1): every document
+written before a host declared an axis, which is all of them the first time it
+does. Leaving `schemaVersion` null keeps the old behaviour exactly — a `schema`
+key is then read, reported and written back untouched rather than gated, since
+a build with no opinion about the host's data has no business refusing a
+document over it.
+
+`GraphDocumentMigrations.upgrade` gains `label` ('format') and `key`
+('version') so a gap in either chain names its own axis. Pinned by the `schema
+versions` group in `test/serialization_test.dart`, including that a document
+out of range on both axes reports the format one.
+
+
 ### How wide a caption can get
 
 `ConnectionLabel.maxWidth` (160) was private and is not any more. A host that
