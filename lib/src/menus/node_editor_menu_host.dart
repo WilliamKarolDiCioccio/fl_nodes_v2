@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'node_menu_entry.dart';
+import 'node_submenu_button.dart';
 
 /// Renders [NodeMenuEntry] lists as a Material menu anchored to a point.
 ///
@@ -11,8 +12,10 @@ import 'node_menu_entry.dart';
 /// anywhere on it count as "inside", and the menu could then only be dismissed
 /// with Escape.
 ///
-/// Everything else — submenus, keyboard traversal, the app's [MenuTheme] —
-/// comes from the Material widgets.
+/// Everything else — keyboard traversal, the app's [MenuTheme] — comes from
+/// the Material widgets. Submenus are [NodeSubmenuButton], which is Material's
+/// row over a panel that slides to stay on screen rather than flipping above
+/// its row; see there for why.
 class NodeEditorMenuHost extends StatefulWidget {
   const NodeEditorMenuHost({
     super.key,
@@ -113,7 +116,10 @@ List<Widget> buildMenuChildren(
       if (entry.isSeparator)
         const Divider(height: 8)
       else if (entry.isSubmenu)
-        SubmenuButton(
+        // Not Material's SubmenuButton: its panel flips above the row when
+        // the window runs out below, and a panel above its row is one the
+        // pointer cannot reach without crossing the siblings that close it.
+        NodeSubmenuButton(
           leadingIcon: entry.icon == null ? null : Icon(entry.icon, size: 18),
           menuChildren: buildMenuChildren(entry.children),
           child: Text(entry.label),

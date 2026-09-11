@@ -159,6 +159,16 @@ point has no button to focus either, so the anchor focuses itself on open and
 hands off to the first choosable entry; without that the arrow keys never reach
 the menu and Escape reaches the canvas instead.
 
+**Submenus are `NodeSubmenuButton`, not Material's `SubmenuButton`.** Material
+flips a submenu that would run off the bottom to end at the *top* of its row,
+and a panel above its row is one the pointer cannot reach without crossing the
+siblings that close it on hover. Ours slides. Everything else stays Material's
+— the row, the items, the `RawMenuAnchor` parent/child linkage that makes
+Escape and an outside click close the tree — and the one subtle thing in it
+is *when* it opens: on the focus a hover brings, not on the hover, because
+`MenuItemButton` reports the hover before it takes focus and taking focus is
+what closes the previous row's children. `submenu_placement_test.dart`.
+
 A wire dropped on empty canvas with `createOnDrop` on **stays drawn until the
 Create menu closes**. Only the drag ends at the drop: `_pendingSource` and
 `_pendingTarget` go, `_pending` stays, and `_handleMenuClosed` — the host's

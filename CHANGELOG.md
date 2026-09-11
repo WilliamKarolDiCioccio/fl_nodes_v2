@@ -33,6 +33,32 @@ versions` group in `test/serialization_test.dart`, including that a document
 out of range on both axes reports the format one.
 
 
+### A submenu that slides instead of flipping
+
+`NodeSubmenuButton`, used by `buildMenuChildren` for every `NodeMenuEntry`
+with children in place of Material's `SubmenuButton`. Material lays a
+submenu out with the delegate a menu bar uses: a panel that would run off
+the bottom of the window is moved to end at the *top* of its row whenever it
+fits there. For a cascade opened at a click point that leaves the panel
+entirely above the row that opened it, and the pointer's path up to it
+crosses the sibling rows — each of which takes focus on hover and closes the
+open child. Near the bottom of the window the three-level Create menu was
+unreachable by mouse.
+
+The row is still a `MenuItemButton`, the linkage is `RawMenuAnchor`'s own —
+a click elsewhere, Escape and choosing an entry still close the whole tree —
+and the panel is dressed from `MenuTheme`. What is ours is the placement: to
+the right of the row, top-aligned with it, slid up only as far as the window
+demands and never off the row's band, flipped to the left only when there is
+no room to the right. It opens on the *focus a hover brings* rather than on
+the hover itself, because `MenuItemButton` reports the hover before it takes
+focus and taking focus is what closes the previous row's children — which,
+opened a moment earlier, would include this panel. Right on a row walks in,
+left inside a panel walks out to the row, and a row nested in a panel hands
+left up to that panel rather than walking focus sideways.
+`submenu_placement_test.dart` pins the placement, the hover crossing, the
+sibling close, the arrows and the two ways the tree closes.
+
 ### The wire stays while the Create menu is up
 
 With `NodeEditorMenus.createOnDrop` on, the pending wire was cleared the

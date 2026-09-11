@@ -765,13 +765,16 @@ void main() {
       Iterable<int> from,
     ) {
       final ran = <int>[];
-      return (<int, GraphDocumentMigration>{
-        for (final step in from)
-          step: (document) {
-            ran.add(step);
-            return <String, Object?>{...document, 'schema': step + 1};
-          },
-      }, ran);
+      return (
+        <int, GraphDocumentMigration>{
+          for (final step in from)
+            step: (document) {
+              ran.add(step);
+              return <String, Object?>{...document, 'schema': step + 1};
+            },
+        },
+        ran,
+      );
     }
 
     test('the stamp is written only by a codec that has an axis', () {
