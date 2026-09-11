@@ -91,7 +91,7 @@ export 'src/prototype/node_resolution.dart'
         PortRemovalHandler;
 export 'src/prototype/port_family_builders.dart' show PortFamilies;
 export 'src/menus/node_editor_menu_host.dart' show NodeEditorMenuHost;
-export 'src/menus/node_submenu_button.dart' show NodeSubmenuButton;
+export 'src/menus/node_submenu_button.dart' show CascadeSide, NodeSubmenuButton;
 export 'src/menus/node_editor_menus.dart'
     show
         NodeEditorMenus,

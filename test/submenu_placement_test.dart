@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fl_nodes_v2/fl_nodes_v2.dart';
+import 'package:fl_nodes_v2/src/menus/node_editor_menu_host.dart';
 
 /// Where a submenu lands, and whether a pointer can get to it.
 ///
@@ -23,7 +24,8 @@ void main() {
       ]);
 
   Future<NodeEditorController> boot(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 600);
+    // Wide enough that a cascade opened a third of the way in goes right.
+    tester.view.physicalSize = const Size(1200, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final controller = NodeEditorController(prototypes: prototypes);
@@ -101,6 +103,55 @@ void main() {
       panel.left,
       moreOrLessEquals(row.right, epsilon: 1),
       reason: 'touching the row, so leaving it sideways lands on the panel',
+    );
+  });
+
+  testWidgets('a cascade picks one side for the whole tree', (tester) async {
+    await boot(tester);
+    // Near the right edge: the root fits, its Create panel would, and the
+    // widest chain would not — so every level goes left, rather than the
+    // second going right and the third flipping back over it.
+    await rightClick(tester, const Offset(1000, 200));
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+    final create = rowRect(tester, 'Create');
+    final groups = panelRect(tester, 'Group 0');
+    expect(
+      groups.right,
+      moreOrLessEquals(create.left, epsilon: 1),
+      reason: 'left of its row, though it would have fitted to the right',
+    );
+
+    await tester.tap(find.text('Group 3'));
+    await tester.pumpAndSettle();
+    final kinds = panelRect(tester, 'Kind 3');
+    expect(
+      kinds.right,
+      moreOrLessEquals(rowRect(tester, 'Group 3').left, epsilon: 1),
+      reason: 'and so is the level below it: one direction, not a zig-zag',
+    );
+    expect(kinds.left, greaterThanOrEqualTo(NodeSubmenuButton.margin));
+  });
+
+  test('the estimate counts the widest chain, not the widest panel', () {
+    const style = TextStyle(fontSize: 14);
+    const leaf = NodeMenuEntry(label: 'Kind', onSelected: _noop);
+    const wide = NodeMenuEntry(label: 'Wider entry', onSelected: _noop);
+    final shallow = <NodeMenuEntry>[
+      const NodeMenuEntry(label: 'Create', children: <NodeMenuEntry>[wide]),
+    ];
+    final deep = <NodeMenuEntry>[
+      const NodeMenuEntry(
+        label: 'Create',
+        children: <NodeMenuEntry>[
+          NodeMenuEntry(label: 'Group', children: <NodeMenuEntry>[leaf]),
+        ],
+      ),
+    ];
+    expect(
+      estimateCascadeWidth(deep, style),
+      greaterThan(estimateCascadeWidth(shallow, style)),
+      reason: 'three narrow panels reach further than two, one of them wide',
     );
   });
 
@@ -226,3 +277,5 @@ void main() {
     expect(find.text('Create'), findsNothing);
   });
 }
+
+void _noop() {}

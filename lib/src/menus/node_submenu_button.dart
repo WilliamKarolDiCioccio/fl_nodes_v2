@@ -21,6 +21,36 @@ import 'package:flutter/scheduler.dart';
 /// still close the whole tree — and the panel is dressed from [MenuTheme].
 /// What it owns is the placement: to the right of the row, top-aligned with
 /// it, pushed up only as far as the window demands and never over the row.
+/// Which way a menu's submenus open, decided once at the root and read by
+/// every [NodeSubmenuButton] beneath it.
+///
+/// One answer for the whole tree rather than one per panel: a cascade whose
+/// second level opened right and whose wider third level then had to open
+/// left zig-zagged across the screen, and its deepest panel landed over the
+/// root. See `NodeEditorMenuHostState._sideFor` for how the answer is found.
+enum CascadeSide {
+  right,
+  left;
+
+  /// The side in force at [context], or [right] where nothing said.
+  static CascadeSide of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_CascadeSideScope>()?.side ??
+      CascadeSide.right;
+
+  /// Puts [side] in force for everything under [child].
+  static Widget provide({required CascadeSide side, required Widget child}) =>
+      _CascadeSideScope(side: side, child: child);
+}
+
+class _CascadeSideScope extends InheritedWidget {
+  const _CascadeSideScope({required this.side, required super.child});
+
+  final CascadeSide side;
+
+  @override
+  bool updateShouldNotify(_CascadeSideScope old) => old.side != side;
+}
+
 class NodeSubmenuButton extends StatefulWidget {
   const NodeSubmenuButton({
     super.key,
@@ -36,6 +66,9 @@ class NodeSubmenuButton extends StatefulWidget {
   /// On the panel's [Material], so a test can measure where one landed.
   @visibleForTesting
   static const Key panelKey = ValueKey<String>('NodeSubmenuButton.panel');
+
+  /// Kept clear of the window's edge, as Material keeps its own menus.
+  static const double margin = 8;
 
   @override
   State<NodeSubmenuButton> createState() => _NodeSubmenuButtonState();
@@ -178,6 +211,7 @@ class _NodeSubmenuButtonState extends State<NodeSubmenuButton> {
           // So the first entry lines up with the row that opened it, the way
           // Material offsets its own submenus by their padding.
           rise: padding.top,
+          side: CascadeSide.of(context),
         ),
         child: TapRegion(
           // The root's group: a tap inside this panel is not a tap outside
@@ -266,14 +300,19 @@ class _PanelDirectionalAction extends DirectionalFocusAction {
 
 /// Beside the row, top-aligned, and pushed only as far as the window needs.
 ///
-/// Horizontally the panel goes to the right of the row and flips to the left
-/// when there is no room — a flip sideways keeps the panel touching the row,
-/// which is what makes it reachable. Vertically it never flips: a panel that
-/// would run off the bottom is slid up until it fits, and one taller than the
-/// window is pinned to the top. Both keep the panel overlapping the row's
-/// band, so the pointer can leave the row sideways and be on the panel.
+/// Horizontally the panel goes to the [side] the cascade was told, and to
+/// the other only when there is no room there — a flip sideways keeps the
+/// panel touching the row, which is what makes it reachable. Vertically it
+/// never flips: a panel that would run off the bottom is slid up until it
+/// fits, and one taller than the window is pinned to the top. Both keep the
+/// panel overlapping the row's band, so the pointer can leave the row
+/// sideways and be on the panel.
 class _SlidingSubmenuLayout extends SingleChildLayoutDelegate {
-  const _SlidingSubmenuLayout({required this.anchor, required this.rise});
+  const _SlidingSubmenuLayout({
+    required this.anchor,
+    required this.rise,
+    required this.side,
+  });
 
   /// The row that opened the panel, in the overlay's coordinates.
   final Rect anchor;
@@ -282,8 +321,9 @@ class _SlidingSubmenuLayout extends SingleChildLayoutDelegate {
   /// not push the first entry below the row.
   final double rise;
 
-  /// Kept clear of the window's edge, as Material keeps its own menus.
-  static const double _margin = 8;
+  final CascadeSide side;
+
+  static const double _margin = NodeSubmenuButton.margin;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
@@ -293,11 +333,20 @@ class _SlidingSubmenuLayout extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    var x = anchor.right;
-    if (x + childSize.width > size.width - _margin) {
-      final left = anchor.left - childSize.width;
-      x = left >= _margin ? left : size.width - _margin - childSize.width;
-    }
+    final right = anchor.right;
+    final left = anchor.left - childSize.width;
+    final fitsRight = right + childSize.width <= size.width - _margin;
+    final fitsLeft = left >= _margin;
+    final x = switch (side) {
+      CascadeSide.right when fitsRight => right,
+      CascadeSide.right when fitsLeft => left,
+      CascadeSide.left when fitsLeft => left,
+      CascadeSide.left when fitsRight => right,
+      // Nowhere it fits whole: as much of it on screen as there is room for,
+      // on the side it was told.
+      CascadeSide.right => size.width - _margin - childSize.width,
+      CascadeSide.left => _margin,
+    };
 
     var y = anchor.top - rise;
     final bottom = size.height - _margin;
@@ -309,5 +358,5 @@ class _SlidingSubmenuLayout extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_SlidingSubmenuLayout old) =>
-      old.anchor != anchor || old.rise != rise;
+      old.anchor != anchor || old.rise != rise || old.side != side;
 }

@@ -167,7 +167,12 @@ siblings that close it on hover. Ours slides. Everything else stays Material's
 Escape and an outside click close the tree — and the one subtle thing in it
 is *when* it opens: on the focus a hover brings, not on the hover, because
 `MenuItemButton` reports the hover before it takes focus and taking focus is
-what closes the previous row's children. `submenu_placement_test.dart`.
+what closes the previous row's children. The **side** is one answer for the
+whole tree, `CascadeSide`, chosen at the root from the widest chain the
+entries could open — estimated from the labels, since nothing is laid out
+until it opens — because panels deciding one by one zig-zagged: right, then
+left over the root when the third level was the wide one.
+`submenu_placement_test.dart`.
 
 A wire dropped on empty canvas with `createOnDrop` on **stays drawn until the
 Create menu closes**. Only the drag ends at the drop: `_pendingSource` and

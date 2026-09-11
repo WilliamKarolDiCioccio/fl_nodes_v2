@@ -106,6 +106,18 @@ left up to that panel rather than walking focus sideways.
 `submenu_placement_test.dart` pins the placement, the hover crossing, the
 sibling close, the arrows and the two ways the tree closes.
 
+**And the whole cascade opens one way.** `CascadeSide`, decided once by
+`NodeEditorMenuHostState` when the menu opens and read by every panel under
+it. Each panel deciding for itself — right when it fits, left when it does
+not — had the third level flip to the left of the second when it was the
+wider one, so a cascade zig-zagged across the screen and its deepest panel
+landed over the root. The side is chosen from the **widest chain** of
+panels the tree could open, estimated from the labels with the menu's own
+text style (`estimateCascadeWidth`, erring wide) since a panel is not laid
+out until it opens; a panel that cannot fit on the side it was told still
+goes to the other, so nothing ever leaves the screen. Pinned by the cascade
+cases in the same test.
+
 ### The wire stays while the Create menu is up
 
 With `NodeEditorMenus.createOnDrop` on, the pending wire was cleared the
