@@ -900,7 +900,19 @@ class NodeEditorState extends State<NodeEditor> {
         widget.onConnectionCreated?.call(_controller.graph.connections[id]!);
       }
     } else if (source != null && pending != null) {
-      _handleConnectionDrop(source, pending.pointer);
+      if (_handleConnectionDrop(source, pending.pointer)) {
+        // The Create menu is up at the drop point. The wire stays drawn,
+        // frozen where it was let go, until the menu closes — the gesture is
+        // not over from where the person sits, and a wire that vanished the
+        // moment the menu appeared read as the drop having failed. Only the
+        // drag ends here: the source and target go, so a pointer moving over
+        // the menu cannot go on steering a wire nobody is holding.
+        setState(() {
+          _pendingSource = null;
+          _pendingTarget = null;
+        });
+        return;
+      }
     }
     _clearPendingConnection();
   }
@@ -910,11 +922,14 @@ class NodeEditorState extends State<NodeEditor> {
   /// Either the host's hook, or — when `createOnDrop` is on — the Create menu
   /// at the drop point, which then wires up whatever it made. Never both: one
   /// gesture must not be able to produce two nodes.
-  void _handleConnectionDrop(PortRef source, Offset scenePosition) {
+  ///
+  /// True when the menu was opened, which is the caller's cue to keep the
+  /// wire on screen until it closes.
+  bool _handleConnectionDrop(PortRef source, Offset scenePosition) {
     final menus = widget.contextMenus;
     if (menus == null || !menus.createOnDrop) {
       widget.onConnectionDropped?.call(source, scenePosition);
-      return;
+      return false;
     }
 
     final request = _menuRequest(NodeMenuCanvasTarget(scenePosition));
@@ -931,7 +946,21 @@ class NodeEditorState extends State<NodeEditor> {
       _controller.history.commitTransaction();
     });
 
-    _menuHostKey.currentState?.open(entries, _viewport.toScreen(scenePosition));
+    final host = _menuHostKey.currentState;
+    if (host == null) return false;
+    return host.open(entries, _viewport.toScreen(scenePosition));
+  }
+
+  /// The menu has gone, however it went: chosen, dismissed, or closed by a
+  /// click elsewhere.
+  ///
+  /// Two things, and both belong to the editor rather than to the host widget:
+  /// the canvas takes focus back, since its shortcuts are gated on holding it
+  /// and the menu took it; and a wire held on screen for a create-on-drop is
+  /// let go of — the real wire, if one was made, is in the graph by now.
+  void _handleMenuClosed() {
+    _focusNode.requestFocus();
+    _clearPendingConnection();
   }
 
   void _clearPendingConnection() {
@@ -1422,9 +1451,7 @@ class NodeEditorState extends State<NodeEditor> {
                 NodeEditorMenuHost(
                   key: _menuHostKey,
                   controller: _menuController,
-                  // Shortcuts are gated on the canvas holding primary focus,
-                  // and the menu takes it while it is open.
-                  onClosed: _focusNode.requestFocus,
+                  onClosed: _handleMenuClosed,
                 ),
                 // After the menu host, because a Stack hit-tests back to
                 // front and the panel wants its presses. Costs nothing to be

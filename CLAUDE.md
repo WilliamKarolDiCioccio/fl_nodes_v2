@@ -159,6 +159,12 @@ point has no button to focus either, so the anchor focuses itself on open and
 hands off to the first choosable entry; without that the arrow keys never reach
 the menu and Escape reaches the canvas instead.
 
+A wire dropped on empty canvas with `createOnDrop` on **stays drawn until the
+Create menu closes**. Only the drag ends at the drop: `_pendingSource` and
+`_pendingTarget` go, `_pending` stays, and `_handleMenuClosed` — the host's
+`onClosed`, which also takes focus back — clears it however the menu went. A
+wire that vanished as the menu appeared read as the drop having failed.
+
 ## Hooks a host can hang on
 
 `guard` and `onEdit` on the controller, both null by default. `_mutate` is the

@@ -33,6 +33,19 @@ versions` group in `test/serialization_test.dart`, including that a document
 out of range on both axes reports the format one.
 
 
+### The wire stays while the Create menu is up
+
+With `NodeEditorMenus.createOnDrop` on, the pending wire was cleared the
+moment the Create menu opened at the drop point, so the person saw their wire
+vanish and a menu appear — which read as the drop having failed, not as the
+next step of it. `_handlePortDragEnd` now keeps the `PendingConnection` drawn,
+frozen where it was let go, until the menu closes: chosen, dismissed or
+clicked away. Only the drag ends at the drop — the source and target are
+cleared — so a pointer over the menu cannot go on steering a wire nobody is
+holding. `NodeEditorMenuHostState.open` returns whether a menu actually
+opened, which is the cue. `drop_to_create_test.dart` pins both the holding and
+the letting go.
+
 ### How wide a caption can get
 
 `ConnectionLabel.maxWidth` (160) was private and is not any more. A host that

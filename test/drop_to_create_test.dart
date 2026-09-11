@@ -178,6 +178,64 @@ void main() {
     expect(controller.graph.connections, isEmpty);
   });
 
+  /// The wire the overlay is drawing, or null when it is drawing none.
+  PendingConnection? pendingWire(WidgetTester tester) {
+    final paint = tester.widget<CustomPaint>(
+      find.byWidgetPredicate(
+        (widget) => widget is CustomPaint && widget.painter is OverlayPainter,
+      ),
+    );
+    return (paint.painter! as OverlayPainter).pending;
+  }
+
+  testWidgets('the wire stays drawn while the menu is up', (tester) async {
+    final controller = await boot(
+      tester,
+      menus: const NodeEditorMenus(createOnDrop: true),
+    );
+
+    await dropWire(tester, controller, const Offset(420, 400));
+
+    final held = pendingWire(tester);
+    expect(
+      held,
+      isNotNull,
+      reason:
+          'the gesture is not over from where the person sits, and a wire '
+          'that vanished the moment the menu appeared read as the drop '
+          'having failed',
+    );
+    expect(
+      held!.pointer,
+      controller.camera.viewport.toScene(const Offset(420, 400)),
+    );
+
+    await tester.tap(find.text('Step'));
+    await tester.pumpAndSettle();
+    expect(
+      pendingWire(tester),
+      isNull,
+      reason: 'the real wire is in the graph by now',
+    );
+    expect(controller.graph.connections, hasLength(1));
+  });
+
+  testWidgets('and goes when the menu is dismissed', (tester) async {
+    final controller = await boot(
+      tester,
+      menus: const NodeEditorMenus(createOnDrop: true),
+    );
+
+    await dropWire(tester, controller, const Offset(420, 400));
+    expect(pendingWire(tester), isNotNull);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(pendingWire(tester), isNull);
+    expect(controller.graph.connections, isEmpty);
+  });
+
   testWidgets('dismissing the menu leaves the graph alone', (tester) async {
     final controller = await boot(
       tester,

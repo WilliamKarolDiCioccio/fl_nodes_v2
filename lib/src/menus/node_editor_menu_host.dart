@@ -55,15 +55,17 @@ class NodeEditorMenuHostState extends State<NodeEditorMenuHost> {
   /// host is a child of.
   ///
   /// Does nothing when there is nothing to show — a build hook that filters
-  /// everything away should leave no empty popup behind.
-  void open(List<NodeMenuEntry> entries, Offset position) {
-    if (entries.isEmpty) return;
+  /// everything away should leave no empty popup behind — and says so, for a
+  /// caller that has something to hold on screen only while a menu is up.
+  bool open(List<NodeMenuEntry> entries, Offset position) {
+    if (entries.isEmpty) return false;
     setState(() {
       _entries = entries;
       _at = position;
     });
     _anchorFocus.requestFocus();
     widget.controller.open();
+    return true;
   }
 
   void close() => widget.controller.close();
