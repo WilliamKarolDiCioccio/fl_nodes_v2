@@ -439,6 +439,13 @@ not showing. The rect is reported *by* the panel rather than recomputed, since
 resolving it means knowing the alignment default and the clamp, and two copies
 of that arithmetic is how a guard stops guarding.
 
+**The bar's title is an `Expanded` with no `Spacer` after it.** A `Flexible`
+title beside a `Spacer` splits the free width between them, and the half the
+title does not fill sits as a gap *before* the spacer — the gear and the fold
+button floated a third of the way in from the right edge, at a distance that
+moved with the panel's width. Measured at 46.75 px on a 320-wide panel;
+`minimap_test.dart` pins the buttons to the edge.
+
 **The action bar carries no tap recogniser at all**, and that is deliberate.
 `GroupView._Handle` had to synthesise its own double tap because it needed
 `onTap` *and* a nested menu, and a `DoubleTapGestureRecognizer` in the arena

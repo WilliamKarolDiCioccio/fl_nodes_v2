@@ -366,7 +366,14 @@ class _MinimapBar extends StatelessWidget {
               const SizedBox(width: 6),
               Icon(Icons.drag_indicator, size: 15, color: palette.ink),
               const SizedBox(width: 2),
-              Flexible(
+              // Expanded, and no Spacer after it. A `Flexible` title beside
+              // a `Spacer` splits the free width between them, and the half
+              // the title does not fill sits as a gap *before* the spacer —
+              // so the gear and the fold button floated a third of the way
+              // in from the right edge, at a distance that changed with the
+              // panel's width. The title takes all of it and the buttons sit
+              // against the edge.
+              Expanded(
                 child: Text(
                   config.title,
                   maxLines: 1,
@@ -378,7 +385,6 @@ class _MinimapBar extends StatelessWidget {
                   ),
                 ),
               ),
-              const Spacer(),
               _MinimapSettingsMenu(
                 config: config,
                 minimap: minimap,
@@ -395,7 +401,9 @@ class _MinimapBar extends StatelessWidget {
                 color: palette.ink,
                 onPressed: minimap.toggleMinimised,
               ),
-              const SizedBox(width: 2),
+              // With the button's own 2 of padding, the same 6 the grip
+              // keeps from the left edge.
+              const SizedBox(width: 4),
             ],
           ),
         ),

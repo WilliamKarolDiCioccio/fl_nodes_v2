@@ -33,6 +33,17 @@ versions` group in `test/serialization_test.dart`, including that a document
 out of range on both axes reports the format one.
 
 
+### The minimap's buttons sit against the edge
+
+The gear and the fold button in the minimap's bar floated a third of the way
+in from the right edge, at a distance that changed with the panel's width.
+The title was a `Flexible` beside a `Spacer`, and the two split the free
+width between them: the half the title did not fill sat as a gap *before*
+the spacer. The title is an `Expanded` now and the spacer is gone, and the
+trailing inset matches the grip's 6 on the left. On a 320-wide panel the
+gap was 46.75 px; `minimap_test.dart` pins it under 8 and equal to the
+grip's.
+
 ### A submenu that slides instead of flipping
 
 `NodeSubmenuButton`, used by `buildMenuChildren` for every `NodeMenuEntry`
