@@ -21,10 +21,25 @@ export 'src/controller/node_editor_controller.dart'
         GraphDocumentSource,
         GraphFragment,
         GraphLayout,
+        AbsentPayload,
+        DiagnosticRaised,
+        GraphPayload,
         GraphRun,
         GraphRunDiagnostic,
+        GraphRunEvent,
         GraphRunException,
         GraphRunIssue,
+        GraphRunListener,
+        GraphRunRecorder,
+        GraphTraceValue,
+        LogEmitted,
+        MemoHit,
+        NodeFinished,
+        NodeStarted,
+        PresentPayload,
+        RunFinished,
+        RunStarted,
+        WithheldPayload,
         NodeEditorCamera,
         NodeEditorClipboard,
         NodeEditorController,
@@ -60,7 +75,7 @@ export 'src/prototype/link_prototype.dart'
         LinkPrototype,
         LinkResolutionContext;
 export 'src/prototype/node_execution.dart'
-    show NodeExecutionContext, NodeExecutor;
+    show GraphLogEntry, GraphLogLevel, NodeExecutionContext, NodeExecutor;
 export 'src/prototype/node_prototype.dart'
     show
         DynamicFieldFamily,

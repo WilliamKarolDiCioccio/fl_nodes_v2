@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fl_nodes_v2/fl_nodes_v2.dart';
 
@@ -927,6 +928,491 @@ void main() {
       final run = await controller.runner.run(from: <String>['b']);
 
       expect(run.trace, <String>['b', 'c']);
+    });
+  });
+  group('watching a run', () {
+    /// One word per event, for asserting an order.
+    String kindOf(GraphRunEvent event) => switch (event) {
+      RunStarted() => 'run',
+      NodeStarted() => 'start',
+      NodeFinished() => 'finish',
+      MemoHit() => 'memo',
+      DiagnosticRaised() => 'diagnostic',
+      LogEmitted() => 'log',
+      RunFinished() => 'done',
+    };
+
+    /// `value` emits its `text` field; `sink` takes a value and passes on.
+    List<NodePrototype> valueAndSink() => <NodePrototype>[
+      step(
+        'value',
+        onExecute: (c) async => c.emit('out', c.field<String>('text')),
+      ),
+      step('sink'),
+    ];
+
+    GraphNode value(String id, String? text) => GraphNode(
+      id: id,
+      type: 'value',
+      position: Offset.zero,
+      data: <String, Object?>{'text': text},
+      ports: const <NodePort>[NodePort.output(id: 'out', dataType: 'text')],
+    );
+
+    NodeEditorController valueIntoSink({bool wiredIn = true}) => controllerWith(
+      <GraphNode>[
+        value('v', 'hello'),
+        node('s', 'sink', <NodePort>[
+          controlOut(),
+          const NodePort.input(id: 'value'),
+        ]),
+      ],
+      <NodeConnection>[if (wiredIn) wire('1', 'v', 'out', 's', 'value')],
+      valueAndSink(),
+    );
+
+    test('a chain reports every turn, in order, and then the run', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          node('a', 'pass', <NodePort>[controlOut()]),
+          node('b', 'pass', <NodePort>[controlIn(), controlOut()]),
+          node('c', 'pass', <NodePort>[controlIn()]),
+        ],
+        <NodeConnection>[
+          wire('1', 'a', 'out', 'b', 'in'),
+          wire('2', 'b', 'out', 'c', 'in'),
+        ],
+        <NodePrototype>[step('pass')],
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      final run = await controller.runner.run();
+
+      expect(recorder.events.map(kindOf).toList(), <String>[
+        'run',
+        'start',
+        'finish',
+        'start',
+        'finish',
+        'start',
+        'finish',
+        'done',
+      ]);
+      expect(
+        recorder.events.map((e) => e.sequence).toList(),
+        List<int>.generate(8, (i) => i),
+      );
+      expect(recorder.events.every((e) => e.runId == run.id), isTrue);
+      expect(
+        recorder.whereType<NodeStarted>().map((e) => e.nodeId).toList(),
+        run.trace,
+      );
+      final started = recorder.whereType<RunStarted>().single;
+      expect(started.roots, <String>['a']);
+      expect(started.pullOnly, isFalse);
+      final finished = recorder.whereType<NodeFinished>().first;
+      expect(finished.outcome, NodeRunState.done);
+      expect(finished.flowed, <String>['out']);
+      expect(
+        identical(recorder.whereType<RunFinished>().single.run, run),
+        isTrue,
+        reason: 'the event carries what run() returns, not a copy',
+      );
+    });
+
+    test('a wire is reported without its value unless asked', () async {
+      final controller = valueIntoSink();
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      await controller.runner.run();
+
+      final produced = recorder
+          .whereType<NodeFinished>()
+          .firstWhere((e) => e.nodeId == 'v')
+          .outputs
+          .single;
+      expect(produced.from, const PortRef('v', 'out'));
+      expect(produced.to, isNull);
+      expect(produced.dataType, 'text', reason: "the port's tag, never a type");
+      expect(produced.payload, isA<WithheldPayload>());
+
+      final read = recorder
+          .whereType<NodeStarted>()
+          .firstWhere((e) => e.nodeId == 's')
+          .inputs
+          .single;
+      expect(read.from, const PortRef('v', 'out'));
+      expect(read.to, const PortRef('s', 'value'));
+      expect(read.payload, isA<WithheldPayload>());
+    });
+
+    test('tracePayloads carries the value, a null one included', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          value('v', 'hello'),
+          value('n', null),
+          node('s', 'sink', <NodePort>[
+            controlOut(),
+            const NodePort.input(id: 'value'),
+            const NodePort.input(id: 'other'),
+          ]),
+        ],
+        <NodeConnection>[
+          wire('1', 'v', 'out', 's', 'value'),
+          wire('2', 'n', 'out', 's', 'other'),
+        ],
+        valueAndSink(),
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner
+        ..onEvent = recorder.call
+        ..tracePayloads = true;
+
+      await controller.runner.run();
+
+      final inputs = recorder
+          .whereType<NodeStarted>()
+          .firstWhere((e) => e.nodeId == 's')
+          .inputs;
+      expect(inputs, hasLength(2));
+      expect((inputs[0].payload as PresentPayload).value, 'hello');
+      expect(
+        (inputs[1].payload as PresentPayload).value,
+        isNull,
+        reason: 'null on a wire is a value, not an absence',
+      );
+    });
+
+    test('a wire nothing was written on is absent, not withheld', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          node('q', 'quiet', <NodePort>[const NodePort.output(id: 'out')]),
+          node('s', 'sink', <NodePort>[
+            controlOut(),
+            const NodePort.input(id: 'value'),
+          ]),
+        ],
+        <NodeConnection>[wire('1', 'q', 'out', 's', 'value')],
+        <NodePrototype>[step('quiet', onExecute: (_) async {}), step('sink')],
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      await controller.runner.run();
+
+      final read = recorder
+          .whereType<NodeStarted>()
+          .firstWhere((e) => e.nodeId == 's')
+          .inputs
+          .single;
+      expect(read.payload, isA<AbsentPayload>());
+      expect(
+        recorder.whereType<NodeFinished>().first.outputs,
+        isEmpty,
+        reason: 'only what was written is reported',
+      );
+    });
+
+    test('a pulled node says so, and a flowed one says which wire', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          value('v', 'x'),
+          node('s', 'sink', <NodePort>[
+            controlOut('go'),
+            const NodePort.input(id: 'value'),
+          ]),
+          node('t', 'sink', <NodePort>[controlIn('here')]),
+        ],
+        <NodeConnection>[
+          wire('1', 'v', 'out', 's', 'value'),
+          wire('2', 's', 'go', 't', 'here'),
+        ],
+        valueAndSink(),
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      await controller.runner.run();
+
+      final starts = recorder.whereType<NodeStarted>().toList();
+      expect(starts.map((e) => e.nodeId), <String>['v', 's', 't']);
+      expect(starts[0].pulled, isTrue);
+      expect(starts[0].enteredVia, isNull);
+      expect(starts[1].pulled, isFalse);
+      expect(starts[1].enteredVia, isNull, reason: 'a root');
+      expect(starts[2].pulled, isFalse);
+      expect(starts[2].enteredVia, 'here');
+    });
+
+    test('a pure node read twice runs once and is a memo hit after', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          value('v', 'x'),
+          node('a', 'sink', <NodePort>[
+            controlOut(),
+            const NodePort.input(id: 'value'),
+          ]),
+          node('b', 'sink', <NodePort>[
+            controlIn(),
+            const NodePort.input(id: 'value'),
+          ]),
+        ],
+        <NodeConnection>[
+          wire('1', 'v', 'out', 'a', 'value'),
+          wire('2', 'v', 'out', 'b', 'value'),
+          wire('3', 'a', 'out', 'b', 'in'),
+        ],
+        valueAndSink(),
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      await controller.runner.run();
+
+      expect(
+        recorder.whereType<NodeStarted>().where((e) => e.nodeId == 'v'),
+        hasLength(1),
+      );
+      expect(
+        recorder.whereType<MemoHit>().map((e) => e.nodeId),
+        <String>['v'],
+        reason: "b's read is served from the memo, and the trace says so",
+      );
+    });
+
+    test('a diagnostic is an event, once', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          value('a', 'first'),
+          value('b', 'second'),
+          node('s', 'sink', <NodePort>[
+            controlOut(),
+            const NodePort.input(id: 'value'),
+          ]),
+        ],
+        <NodeConnection>[
+          wire('c1', 'a', 'out', 's', 'value'),
+          wire('c2', 'b', 'out', 's', 'value'),
+        ],
+        valueAndSink(),
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      final run = await controller.runner.run();
+
+      final raised = recorder.whereType<DiagnosticRaised>().toList();
+      expect(raised, hasLength(1));
+      expect(raised.single.diagnostic.issue, GraphRunIssue.multipleInputs);
+      expect(
+        identical(raised.single.diagnostic, run.diagnostics.single),
+        isTrue,
+      );
+    });
+
+    test('an executor can log, and the line goes both places', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          node('a', 'talk', <NodePort>[controlOut()]),
+        ],
+        const <NodeConnection>[],
+        <NodePrototype>[
+          step(
+            'talk',
+            onExecute: (c) async => c.log(
+              'hello',
+              level: GraphLogLevel.warning,
+              data: const <String, Object?>{'secret': 1},
+            ),
+          ),
+        ],
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      final run = await controller.runner.run();
+
+      final entry = run.log.single;
+      expect(entry.nodeId, 'a');
+      expect(entry.step, 0);
+      expect(entry.level, GraphLogLevel.warning);
+      expect(entry.message, 'hello');
+      expect(
+        entry.data,
+        const <String, Object?>{'secret': 1},
+        reason: 'what an executor logs is its own choice; nothing withholds it',
+      );
+      expect(
+        identical(recorder.whereType<LogEmitted>().single.entry, entry),
+        isTrue,
+      );
+      expect(
+        recorder.events.indexWhere((e) => e is LogEmitted),
+        greaterThan(recorder.events.indexWhere((e) => e is NodeStarted)),
+        reason: 'said during the turn, so between its start and its end',
+      );
+      expect(
+        recorder.events.indexWhere((e) => e is LogEmitted),
+        lessThan(recorder.events.indexWhere((e) => e is NodeFinished)),
+      );
+    });
+
+    test('a context kept past its turn refuses to log', () async {
+      NodeExecutionContext? stashed;
+      final controller = controllerWith(
+        <GraphNode>[
+          node('a', 'keep', <NodePort>[controlOut()]),
+        ],
+        const <NodeConnection>[],
+        <NodePrototype>[step('keep', onExecute: (c) async => stashed = c)],
+      );
+
+      await controller.runner.run();
+
+      expect(() => stashed!.log('too late'), throwsStateError);
+    });
+
+    test(
+      'a failed turn carries the error; a cancelled one carries nothing',
+      () async {
+        final controller = controllerWith(
+          <GraphNode>[
+            node('a', 'boom', <NodePort>[controlOut()]),
+          ],
+          const <NodeConnection>[],
+          <NodePrototype>[
+            step('boom', onExecute: (_) async => throw StateError('no')),
+          ],
+        );
+        final recorder = GraphRunRecorder();
+        controller.runner.onEvent = recorder.call;
+
+        final run = await controller.runner.run();
+
+        final failed = recorder.whereType<NodeFinished>().single;
+        expect(failed.outcome, NodeRunState.failed);
+        expect(failed.error, isA<StateError>());
+        expect(identical(failed.error, run.error), isTrue);
+        expect(failed.stackTrace, isNotNull);
+
+        final started = Completer<void>();
+        final gate = Completer<void>();
+        final slow = controllerWith(
+          <GraphNode>[
+            node('a', 'slow', <NodePort>[const NodePort.output(id: 'out')]),
+          ],
+          const <NodeConnection>[],
+          <NodePrototype>[
+            step(
+              'slow',
+              onExecute: (c) async {
+                started.complete();
+                await gate.future;
+                c.emit('out', 'never published');
+              },
+            ),
+          ],
+        );
+        recorder.clear();
+        slow.runner.onEvent = recorder.call;
+
+        final running = slow.runner.run(from: <String>['a']);
+        // Cancelled while the executor is in flight, so the turn had begun
+        // and its writes exist to be dropped.
+        await started.future;
+        slow.runner.cancel();
+        gate.complete();
+        await running;
+
+        final cancelled = recorder.whereType<NodeFinished>().single;
+        expect(cancelled.outcome, NodeRunState.cancelled);
+        expect(
+          cancelled.outputs,
+          isEmpty,
+          reason: 'the run never published them, so the trace does not either',
+        );
+      },
+    );
+
+    test('a listener that throws is reported and the run goes on', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          node('a', 'pass', <NodePort>[controlOut()]),
+          node('b', 'pass', <NodePort>[controlIn()]),
+        ],
+        <NodeConnection>[wire('1', 'a', 'out', 'b', 'in')],
+        <NodePrototype>[step('pass')],
+      );
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = previous);
+      var calls = 0;
+      controller.runner.onEvent = (_) {
+        calls++;
+        throw StateError('formatter bug');
+      };
+
+      final run = await controller.runner.run();
+
+      expect(run.succeeded, isTrue);
+      expect(run.trace, <String>['a', 'b']);
+      expect(calls, 6, reason: 'every event was still offered');
+      expect(reported, hasLength(6));
+      expect(reported.first.library, 'fl_nodes_v2');
+      expect(reported.first.exception, isA<StateError>());
+    });
+
+    test('runs are numbered', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          node('a', 'pass', <NodePort>[controlOut()]),
+        ],
+        const <NodeConnection>[],
+        <NodePrototype>[step('pass')],
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+
+      final first = await controller.runner.run();
+      final second = await controller.runner.run();
+
+      expect(first.id, 1);
+      expect(second.id, 2);
+      expect(recorder.events.map((e) => e.runId).toSet(), <int>{1, 2});
+      expect(
+        recorder.whereType<RunStarted>().map((e) => e.sequence),
+        <int>[0, 0],
+        reason: 'the sequence starts over with each run',
+      );
+    });
+
+    test('an event lands before the notification that follows it', () async {
+      final controller = controllerWith(
+        <GraphNode>[
+          node('a', 'pass', <NodePort>[controlOut()]),
+        ],
+        const <NodeConnection>[],
+        <NodePrototype>[step('pass')],
+      );
+      final recorder = GraphRunRecorder();
+      controller.runner.onEvent = recorder.call;
+      final seenAtNotify = <NodeRunState, int>{};
+      controller.addListener(() {
+        final state = controller.runner.stateOf('a');
+        seenAtNotify.putIfAbsent(state, () => recorder.events.length);
+      });
+
+      await controller.runner.run();
+
+      expect(
+        seenAtNotify[NodeRunState.running],
+        2,
+        reason: 'RunStarted and NodeStarted were already recorded',
+      );
+      expect(seenAtNotify[NodeRunState.done], 3);
     });
   });
 }
