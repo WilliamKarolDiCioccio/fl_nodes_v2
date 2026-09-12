@@ -31,6 +31,7 @@ part 'history.dart';
 part 'layout.dart';
 part 'project.dart';
 part 'runner.dart';
+part 'run_trace.dart';
 part 'selection.dart';
 
 /// Decides whether an output port may be wired to an input port.

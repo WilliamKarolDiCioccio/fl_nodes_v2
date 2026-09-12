@@ -258,6 +258,70 @@ transition, after the notification rather than before it: a host that arranges
 from there mutates the graph, and doing that midway through announcing a
 measurement would have listeners reading a graph that is about to move.
 
+## Watching a run
+
+`runner.onEvent` and `runner.tracePayloads`, a listener and a switch, null and
+false by default. The listener is handed a `GraphRunEvent` for everything a
+run does: `RunStarted`, a `NodeStarted`/`NodeFinished` pair per turn,
+`MemoHit`, `DiagnosticRaised`, `LogEmitted`, `RunFinished`. `GraphRun` already
+says afterwards what a run did and `notifyListeners` says that a node's state
+moved; this says what is happening while it is, in enough detail to draw a
+debugger from. The package draws no debugger and keeps no log — the same
+division as the layout seam: it supplies what a host cannot get for itself and
+the host decides what to make of it.
+
+**Typed events, never strings.** Which lines a log is made of is the host's
+decision, and a package that formatted them would have made it. The hierarchy
+is sealed so a host's `switch` is exhaustive and a new kind of event is a
+compile error in the host rather than a line that never prints. Nothing in an
+event is derived from a Dart type: a `GraphTraceValue` carries the port's
+`dataType` *tag*, because `runtimeType` is renamed in an obfuscated build and
+a debugger that printed it would read fine in development and fill a bug
+report with garbage in the field.
+
+**Payloads are withheld by default, and the threat is the sink.** A listener
+is in-process code that can already read every value off `GraphRun.values`;
+hiding values from it protects nothing. What `tracePayloads` governs is what an
+event *carries*, because an event is what gets written to a file, pasted into
+a report or shipped in a support bundle — and a value on a wire was produced by
+a node body the host did not write, so it is the one thing in a trace whose
+sensitivity the host cannot vouch for. Off still reports that a value flowed,
+between which ports, with which tag: `WithheldPayload` rather than nothing. A
+wire nothing was written on is `AbsentPayload`, distinct from a `PresentPayload`
+holding null, which a node is entitled to emit. `NodeExecutionContext.log` is
+**not** gated: what an executor logs is its author's deliberate choice, which
+is exactly what a value on a wire is not.
+
+**A cancelled turn reports no outputs.** `commit` declines to publish the
+writes of a node the run was cancelled under, and the trace shows what the run
+published — a debugger that showed a value the next node never saw would be
+lying about the run it was watching.
+
+**`MemoHit` exists so a value never appears from nowhere.** A pure node read
+twice runs once; without the event the second consumer's inputs would trace
+back to no turn at all.
+
+**The listener is synchronous, and every event lands before the notification
+that follows it**, so a host that rebuilds from `notifyListeners` finds its
+recorder already up to date. It is read once at the start of a run, like the
+prototypes, so a listener swapped mid-run does not see half of one.
+
+**`emit` takes a builder, not an event.** `NodeStarted` walks every wire into
+the node; with no listener attached the walk must not happen, and a builder
+that is never called is how it does not. An unobserved run costs a null check
+per event and nothing else.
+
+**A listener that throws is reported and the run goes on**, through
+`FlutterError.reportError` with `library: 'fl_nodes_v2'` — the idiom the
+context menus already use. That is deliberately unlike `guard` and `onEdit`,
+which propagate: those throw on the host's own call stack between edits,
+whereas a listener throwing mid-run would take the `GraphRun`, and every turn
+before it, down with a formatting bug.
+
+`GraphRunRecorder` is the ten lines every host and every test would otherwise
+write — a list and a `call` — and it is a fixture, not a sink. The `watching a
+run` group in `runner_test.dart` pins all of the above.
+
 ## Emphasis
 
 `controller.emphasis` is a **focus**: a set of nodes and connections that stand

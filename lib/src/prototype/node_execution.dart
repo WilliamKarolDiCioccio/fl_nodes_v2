@@ -1,5 +1,42 @@
+import 'package:flutter/foundation.dart';
+
 import '../model/graph_node.dart';
 import '../model/node_graph.dart';
+
+/// How loudly an executor said something. The host decides what each means.
+enum GraphLogLevel { debug, info, warning, error }
+
+/// One thing an executor said through [NodeExecutionContext.log].
+///
+/// [nodeId] and [step] are filled in by the runner, so a host reading a log
+/// never has to work out which turn of which node a line came from.
+@immutable
+class GraphLogEntry {
+  const GraphLogEntry({
+    required this.nodeId,
+    required this.step,
+    required this.level,
+    required this.message,
+    this.data,
+  });
+
+  final String nodeId;
+
+  /// Which turn of the node this was, starting at zero — the same count as
+  /// [NodeExecutionContext.step].
+  final int step;
+
+  final GraphLogLevel level;
+  final String message;
+
+  /// Whatever the executor chose to attach. Never withheld: an author who put
+  /// it here meant it to be read, which is what makes it different from a
+  /// value on a wire.
+  final Object? data;
+
+  @override
+  String toString() => '[${level.name}] $nodeId#$step: $message';
+}
 
 /// What a node does when the flow reaches it.
 ///
@@ -31,6 +68,7 @@ abstract class NodeExecutionStep {
   List<Object?> readInput(String portId);
   void writeOutput(String portId, Object? value);
   void scheduleFlow(String portId);
+  void log(GraphLogEntry entry);
 
   Map<String, Object?> get state;
 }
@@ -152,6 +190,34 @@ class NodeExecutionContext {
   /// incoming branches counts tokens in — the runner has no join of its own.
   /// It starts empty on every run.
   Map<String, Object?> get state => _step.state;
+
+  // -------------------------------------------------------------------- log
+
+  /// Says something about this turn, for whoever is watching the run.
+  ///
+  /// The entry lands on [GraphRun.log] and reaches [NodeEditorRunner.onEvent]
+  /// as a `LogEmitted`, with this node's id and turn already on it. [data] is
+  /// passed through as it is whatever [NodeEditorRunner.tracePayloads] says:
+  /// that switch withholds values that arrived on wires, which the author of
+  /// this executor did not choose, and this is something they did.
+  ///
+  /// Throws once this node's turn is over, like [emit] and [flow].
+  void log(
+    String message, {
+    GraphLogLevel level = GraphLogLevel.info,
+    Object? data,
+  }) {
+    _requireOpen('log');
+    _step.log(
+      GraphLogEntry(
+        nodeId: _step.node.id,
+        step: _step.step,
+        level: level,
+        message: message,
+        data: data,
+      ),
+    );
+  }
 
   void _requireOpen(String what) {
     if (_step.isOpen) return;

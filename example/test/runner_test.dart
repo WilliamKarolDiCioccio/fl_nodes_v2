@@ -88,5 +88,13 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.textContaining('events traced'),
+      ),
+      findsOneWidget,
+      reason: 'the demo hangs a recorder on the runner, and says so',
+    );
   });
 }

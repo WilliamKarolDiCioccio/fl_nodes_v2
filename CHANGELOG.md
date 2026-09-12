@@ -1,5 +1,44 @@
 ## Unreleased
 
+### Watching a run
+
+A listener on the runner that is told everything a run does as it does it,
+and a way for an executor to say something into the same stream. `GraphRun`
+already reported afterwards what a run did; a debugger needs to know while it
+is happening, and what was on the wires. The package emits and keeps no log —
+which lines a trace is made of, and where it goes, is the host's decision, as
+the arrangement of a graph is under `applyLayout`.
+
+- `NodeEditorRunner.onEvent` (`GraphRunListener?`, null) — handed a
+  `GraphRunEvent` for every step of every run: `RunStarted`, `NodeStarted`,
+  `NodeFinished`, `MemoHit`, `DiagnosticRaised`, `LogEmitted`, `RunFinished`.
+  A sealed hierarchy, so a host's `switch` is exhaustive. Synchronous, and
+  fired before the notification that follows it. A listener that throws is
+  reported through `FlutterError.reportError` and the run goes on.
+- `NodeEditorRunner.tracePayloads` (`bool`, false) — whether a
+  `GraphTraceValue` carries the value on the wire. Off, a value is
+  `WithheldPayload` and the event still says which ports and which `dataType`
+  tag; a wire nothing was written on is `AbsentPayload`, distinct from a
+  `PresentPayload` holding null. Off by default because a value on a wire was
+  produced by a node body the host did not write, and a trace is the thing
+  that gets written to a file.
+- `NodeExecutionContext.log(message, {level, data})` — lands on
+  `GraphRun.log` (`List<GraphLogEntry>`) and reaches the listener as
+  `LogEmitted`, with the node id and turn filled in. Not gated by
+  `tracePayloads`: what an executor logs is its author's choice. Throws after
+  the turn is over, like `emit`.
+- `GraphRun.id` (`int`) — climbs by one per run of a runner; every event of the
+  run carries it, and every event carries its `sequence` within the run and
+  `at`, read from the run's own stopwatch.
+- `GraphRunRecorder` — a list and a `call`, for `runner.onEvent =
+  recorder.call`. A fixture, not a sink.
+
+Nothing in an event is derived from a Dart type; `dataType` is the port's tag,
+which survives obfuscation where `runtimeType` does not. The example prints a
+line per event and reports how many it traced. The `watching a run` group in
+`runner_test.dart` pins the order, the three payload states, the memo hit, the
+cancelled turn, the reported listener and the run numbering.
+
 ### The host's own format version
 
 `NodeGraphCodec.schemaVersion` (`int?`, null) and `NodeGraphCodec.schemaMigrations`

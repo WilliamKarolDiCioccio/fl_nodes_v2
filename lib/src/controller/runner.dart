@@ -69,11 +69,13 @@ class GraphRunException implements Exception {
 @immutable
 class GraphRun {
   const GraphRun({
+    required this.id,
     required this.trace,
     required this.states,
     required this.runCounts,
     required this.values,
     required this.diagnostics,
+    required this.log,
     required this.steps,
     required this.elapsed,
     required this.cancelled,
@@ -82,6 +84,10 @@ class GraphRun {
     this.failedNodeId,
     this.stackTrace,
   });
+
+  /// Which run of its runner this was, from one. Every [GraphRunEvent] of the
+  /// run carries the same number.
+  final int id;
 
   /// Node ids in the order they ran. A node appears once per turn it took.
   final List<String> trace;
@@ -99,6 +105,9 @@ class GraphRun {
   final Map<PortRef, Object?> values;
 
   final List<GraphRunDiagnostic> diagnostics;
+
+  /// Everything executors said through [NodeExecutionContext.log], in order.
+  final List<GraphLogEntry> log;
 
   /// Node executions, pure data evaluations included.
   final int steps;
@@ -144,8 +153,38 @@ class NodeEditorRunner {
 
   final NodeEditorController _controller;
 
+  /// Told about each run as it happens: every turn a node takes, what was on
+  /// the wires into and out of it, every remark, every line an executor logs.
+  ///
+  /// [ChangeNotifier] already says *that* a node's state changed, and
+  /// [GraphRun] says afterwards what the whole run did; this says **what is
+  /// happening**, while it is, in enough detail to draw a debugger from.
+  /// Synchronous, and fired before the notification that follows it, so a
+  /// listener that rebuilds finds its record already up to date. Costs nothing
+  /// while null: no event is built for nobody.
+  ///
+  /// A listener that throws is reported through [FlutterError.reportError]
+  /// and the run goes on. That is unlike [NodeEditorController.guard] and
+  /// [NodeEditorController.onEdit], which propagate — those throw on the
+  /// host's own call stack between edits, where a listener here would take a
+  /// run, and every turn before it, down with a formatting bug.
+  GraphRunListener? onEvent;
+
+  /// Whether events carry the values on the wires.
+  ///
+  /// Off, and deliberately: a value on a wire was produced by a node body the
+  /// host did not write, so it is the one thing in a trace whose sensitivity
+  /// the host cannot vouch for — and a trace is written somewhere, which is
+  /// where the risk is. While this is false every [GraphTraceValue] still
+  /// says *that* a value flowed and what its port's `dataType` tag is; its
+  /// payload is [WithheldPayload]. Nothing about [NodeExecutionContext.log]
+  /// is gated by this, because what an executor logs is the executor's
+  /// author's choice.
+  bool tracePayloads = false;
+
   _RunState? _current;
   GraphRun? _last;
+  int _runs = 0;
 
   bool get isRunning => _current != null;
 
@@ -187,11 +226,15 @@ class NodeEditorRunner {
     }
     final watch = Stopwatch()..start();
     final run = _RunState(
+      id: ++_runs,
       graph: _controller._graph,
       prototypes: _controller._prototypes,
       maxSteps: maxSteps,
       deadline: timeout == null ? null : DateTime.now().add(timeout),
       onStateChanged: _controller._notify,
+      watch: watch,
+      listener: onEvent,
+      payloads: tracePayloads,
     );
     _current = run;
     _controller._notify();
@@ -202,11 +245,13 @@ class NodeEditorRunner {
       _current = null;
     }
     final result = GraphRun(
+      id: run.id,
       trace: List<String>.unmodifiable(run.trace),
       states: Map<String, NodeRunState>.unmodifiable(run.states),
       runCounts: Map<String, int>.unmodifiable(run.runCounts),
       values: Map<PortRef, Object?>.unmodifiable(run.values),
       diagnostics: List<GraphRunDiagnostic>.unmodifiable(run.diagnostics),
+      log: List<GraphLogEntry>.unmodifiable(run.log),
       steps: run.steps,
       elapsed: watch.elapsed,
       cancelled: run.cancelled,
@@ -216,6 +261,10 @@ class NodeEditorRunner {
       stackTrace: run.stackTrace,
     );
     _last = result;
+    run.emit(
+      (sequence, at) =>
+          RunFinished(runId: run.id, sequence: sequence, at: at, run: result),
+    );
     _controller._notify();
     return result;
   }
@@ -224,6 +273,15 @@ class NodeEditorRunner {
 
   Future<void> _execute(_RunState run, Iterable<String>? from) async {
     final roots = run.rootsFor(from);
+    run.emit(
+      (sequence, at) => RunStarted(
+        runId: run.id,
+        sequence: sequence,
+        at: at,
+        roots: List<String>.unmodifiable(roots),
+        pullOnly: run.pullOnly,
+      ),
+    );
     if (roots.isEmpty) return;
 
     if (run.pullOnly) {
@@ -278,7 +336,7 @@ class NodeEditorRunner {
     await _pullInputs(run, plan, <String>[]);
     if (run.error != null || run.stopped) return const <String>[];
 
-    final step = await _invoke(run, plan, via);
+    final step = await _invoke(run, plan, via, pulled: false);
     if (step == null) return const <String>[];
 
     run.trace.add(nodeId);
@@ -343,7 +401,17 @@ class NodeEditorRunner {
       }
       return;
     }
-    if (run.memoValid(plan)) return;
+    if (run.memoValid(plan)) {
+      run.emit(
+        (sequence, at) => MemoHit(
+          runId: run.id,
+          sequence: sequence,
+          at: at,
+          nodeId: source.nodeId,
+        ),
+      );
+      return;
+    }
     await _pull(run, source.nodeId, pulling);
   }
 
@@ -369,7 +437,7 @@ class NodeEditorRunner {
 
     // Null, and not a guess: nothing flowed into this node. It is being
     // evaluated because something downstream asked what it holds.
-    final step = await _invoke(run, plan, null);
+    final step = await _invoke(run, plan, null, pulled: true);
     if (step == null) return;
     // Traced like any other turn: `steps` and `runCounts` count a pull, and a
     // trace that quietly left them out would disagree with both.
@@ -382,8 +450,9 @@ class NodeEditorRunner {
   Future<_Step?> _invoke(
     _RunState run,
     _NodePlan plan,
-    String? enteredVia,
-  ) async {
+    String? enteredVia, {
+    required bool pulled,
+  }) async {
     if (run.steps >= run.maxSteps) {
       run.fail(
         GraphRunException(
@@ -395,9 +464,22 @@ class NodeEditorRunner {
       return null;
     }
     run.steps++;
+    final step = _Step(run, plan, run.runCounts[plan.node.id] ?? 0, enteredVia);
+    run.emit(
+      (sequence, at) => NodeStarted(
+        runId: run.id,
+        sequence: sequence,
+        at: at,
+        nodeId: plan.node.id,
+        step: step.step,
+        enteredVia: enteredVia,
+        pulled: pulled,
+        inputs: run.traceInputs(plan),
+      ),
+    );
     run.setState(plan.node.id, NodeRunState.running);
 
-    final step = _Step(run, plan, run.runCounts[plan.node.id] ?? 0, enteredVia);
+    final turn = Stopwatch()..start();
     try {
       final executor = plan.executor;
       if (executor != null) {
@@ -416,20 +498,64 @@ class NodeEditorRunner {
       }
     } catch (error, stackTrace) {
       step.close();
+      turn.stop();
+      run.emit(
+        (sequence, at) => NodeFinished(
+          runId: run.id,
+          sequence: sequence,
+          at: at,
+          nodeId: plan.node.id,
+          step: step.step,
+          outcome: NodeRunState.failed,
+          outputs: const <GraphTraceValue>[],
+          flowed: const <String>[],
+          elapsed: turn.elapsed,
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      );
       run.setState(plan.node.id, NodeRunState.failed);
       run.fail(error, nodeId: plan.node.id, stackTrace: stackTrace);
       return null;
     }
     step.close();
+    turn.stop();
 
     // Checked before anything the step recorded is applied, so a run that was
     // cancelled mid-await does not publish the values of the node it was
     // waiting on.
     if (run.stopped) {
+      // Nor report them: what the trace shows is what the run published.
+      run.emit(
+        (sequence, at) => NodeFinished(
+          runId: run.id,
+          sequence: sequence,
+          at: at,
+          nodeId: plan.node.id,
+          step: step.step,
+          outcome: NodeRunState.cancelled,
+          outputs: const <GraphTraceValue>[],
+          flowed: const <String>[],
+          elapsed: turn.elapsed,
+        ),
+      );
       run.setState(plan.node.id, NodeRunState.cancelled);
       return null;
     }
     run.commit(step, bumpStamp: !plan.isPureData);
+    run.emit(
+      (sequence, at) => NodeFinished(
+        runId: run.id,
+        sequence: sequence,
+        at: at,
+        nodeId: plan.node.id,
+        step: step.step,
+        outcome: NodeRunState.done,
+        outputs: run.traceOutputs(step),
+        flowed: List<String>.unmodifiable(step.flowed),
+        elapsed: turn.elapsed,
+      ),
+    );
     run.setState(plan.node.id, NodeRunState.done);
     return step;
   }
@@ -474,11 +600,15 @@ class _NodePlan {
 
 class _RunState {
   _RunState({
+    required this.id,
     required this.graph,
     required NodePrototypeRegistry prototypes,
     required this.maxSteps,
     required this.deadline,
     required this.onStateChanged,
+    required this.watch,
+    required this.listener,
+    required this.payloads,
   }) {
     for (final node in graph.nodes.values) {
       final controlIn = <String>[];
@@ -522,10 +652,18 @@ class _RunState {
     }
   }
 
+  final int id;
   final NodeGraph graph;
   final int maxSteps;
   final DateTime? deadline;
   final VoidCallback onStateChanged;
+  final Stopwatch watch;
+
+  /// Read once at the start, like the prototypes: a listener swapped mid-run
+  /// would otherwise see half a run.
+  final GraphRunListener? listener;
+  final bool payloads;
+  int sequence = 0;
 
   final Map<PortRef, NodePort> ports = <PortRef, NodePort>{};
   final Map<PortRef, List<NodeConnection>> outgoing =
@@ -543,6 +681,7 @@ class _RunState {
   final Map<String, NodeRunState> states = <String, NodeRunState>{};
   final List<String> trace = <String>[];
   final List<GraphRunDiagnostic> diagnostics = <GraphRunDiagnostic>[];
+  final List<GraphLogEntry> log = <GraphLogEntry>[];
   final Set<String> _said = <String>{};
 
   /// Bumped once per control-node turn. A pure data node's memo is good while
@@ -593,15 +732,91 @@ class _RunState {
     // The same remark about the same port, once. A node inside a loop would
     // otherwise report it on every turn.
     if (!_said.add('${issue.name}:$nodeId:$portId')) return;
-    diagnostics.add(
-      GraphRunDiagnostic(
-        issue: issue,
-        message: message,
-        nodeId: nodeId,
-        portId: portId,
+    final diagnostic = GraphRunDiagnostic(
+      issue: issue,
+      message: message,
+      nodeId: nodeId,
+      portId: portId,
+    );
+    diagnostics.add(diagnostic);
+    emit(
+      (sequence, at) => DiagnosticRaised(
+        runId: id,
+        sequence: sequence,
+        at: at,
+        diagnostic: diagnostic,
       ),
     );
   }
+
+  void say(GraphLogEntry entry) {
+    log.add(entry);
+    emit(
+      (sequence, at) =>
+          LogEmitted(runId: id, sequence: sequence, at: at, entry: entry),
+    );
+  }
+
+  // ---------------------------------------------------------------- tracing
+
+  /// Hands [build]'s event to the listener, if there is one.
+  ///
+  /// Takes a builder rather than an event so that an unobserved run pays
+  /// nothing: [traceInputs] walks every wire into a node, and that walk must
+  /// not happen on every step for nobody.
+  void emit(GraphRunEvent Function(int sequence, Duration at) build) {
+    final listener = this.listener;
+    if (listener == null) return;
+    final event = build(sequence++, watch.elapsed);
+    try {
+      listener(event);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'fl_nodes_v2',
+          context: ErrorDescription('while reporting a run event'),
+        ),
+      );
+    }
+  }
+
+  /// One entry per wire into [plan]'s data inputs, in the order input() reads
+  /// them.
+  List<GraphTraceValue> traceInputs(_NodePlan plan) {
+    final inputs = <GraphTraceValue>[];
+    for (final portId in plan.dataInputs) {
+      final to = PortRef(plan.node.id, portId);
+      for (final wire in incoming[to] ?? const <NodeConnection>[]) {
+        inputs.add(
+          GraphTraceValue(
+            from: wire.from,
+            to: to,
+            dataType: ports[wire.from]?.dataType,
+            payload: values.containsKey(wire.from)
+                ? _payload(values[wire.from])
+                : const AbsentPayload(),
+          ),
+        );
+      }
+    }
+    return List<GraphTraceValue>.unmodifiable(inputs);
+  }
+
+  /// One entry per data output [step] wrote, wired or not.
+  List<GraphTraceValue> traceOutputs(_Step step) =>
+      List<GraphTraceValue>.unmodifiable(<GraphTraceValue>[
+        for (final MapEntry(key: ref, value: value) in step.writes.entries)
+          GraphTraceValue(
+            from: ref,
+            dataType: ports[ref]?.dataType,
+            payload: _payload(value),
+          ),
+      ]);
+
+  GraphPayload _payload(Object? value) =>
+      payloads ? PresentPayload(value) : const WithheldPayload();
 
   /// The nodes that took the most turns, for a budget-exceeded report.
   List<String> busiest() {
@@ -755,6 +970,9 @@ class _Step implements NodeExecutionStep {
     _require(portId, PortKind.control, 'flow');
     if (!flowed.contains(portId)) flowed.add(portId);
   }
+
+  @override
+  void log(GraphLogEntry entry) => _run.say(entry);
 
   void _require(String portId, PortKind kind, String what) {
     final port = _run.ports[PortRef(_plan.node.id, portId)];

@@ -123,9 +123,52 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
         }
         return Map<String, Object?>.from(json);
       };
+    // Everything a run does, as it does it. The demo keeps the record and
+    // prints each line; a real host would draw a debugger from the same
+    // events. Payloads stay withheld, which is the default and the point: a
+    // trace that is printed is a trace that can be pasted somewhere.
+    _controller.runner.onEvent = (event) {
+      _trace.call(event);
+      debugPrint(_describe(event));
+    };
     // The first layout pass is what tells us how big auto-height nodes are, so
     // framing the graph waits for it.
     WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+  }
+
+  final GraphRunRecorder _trace = GraphRunRecorder();
+
+  /// One line per event. The switch is exhaustive, so a new kind of event is
+  /// a compile error here rather than a line that never prints.
+  static String _describe(GraphRunEvent event) {
+    final at = '${event.at.inMilliseconds}ms'.padLeft(7);
+    return switch (event) {
+      RunStarted(:final roots, :final pullOnly) =>
+        '$at run #${event.runId} from ${roots.join(', ')}'
+            '${pullOnly ? ' (data only)' : ''}',
+      NodeStarted(
+        :final nodeId,
+        :final step,
+        :final enteredVia,
+        :final inputs,
+      ) =>
+        '$at > $nodeId#$step'
+            '${enteredVia == null ? '' : ' via $enteredVia'}'
+            '${inputs.isEmpty ? '' : ' reading ${inputs.join(', ')}'}',
+      NodeFinished(
+        :final nodeId,
+        :final outcome,
+        :final outputs,
+        :final flowed,
+      ) =>
+        '$at < $nodeId ${outcome.name}'
+            '${outputs.isEmpty ? '' : ' wrote ${outputs.join(', ')}'}'
+            '${flowed.isEmpty ? '' : ' -> ${flowed.join(', ')}'}',
+      MemoHit(:final nodeId) => '$at = $nodeId (memo)',
+      DiagnosticRaised(:final diagnostic) => '$at ! $diagnostic',
+      LogEmitted(:final entry) => '$at   $entry',
+      RunFinished(:final run) => '$at $run',
+    };
   }
 
   @override
@@ -256,6 +299,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
   }
 
   Future<void> _run() async {
+    _trace.clear();
     final run = await _controller.runner.run();
 
     if (!run.succeeded) {
@@ -273,7 +317,10 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
         ? ''
         : ' \u00b7 ${run.diagnostics.length} note'
               '${run.diagnostics.length == 1 ? '' : 's'}';
-    _report('Ran ${run.trace.length} steps \u00b7 reply "$reply"$noted');
+    _report(
+      'Ran ${run.trace.length} steps \u00b7 reply "$reply"$noted \u00b7 '
+      '${_trace.events.length} events traced',
+    );
   }
 
   /// The node types the editor will offer, in the order it offers them.
