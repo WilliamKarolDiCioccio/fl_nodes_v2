@@ -1,4 +1,8 @@
-## Unreleased
+## 0.3.0
+
+The first release since 0.1.0. The package carried `0.2.0` while these landed
+and stamped it into every document a host wrote — `"package": "fl_nodes_v2/0.2.0"`
+is a graph saved by such a build — but 0.2.0 was never published.
 
 ### Watching a run
 

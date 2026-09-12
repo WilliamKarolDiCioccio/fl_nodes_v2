@@ -24,9 +24,7 @@ cd example && flutter run
 
 ```yaml
 dependencies:
-  fl_nodes_v2:
-    git:
-      url: https://github.com/WilliamKarolDiCioccio/fl_nodes_v2.git
+  fl_nodes_v2: ^0.3.0
 ```
 
 ```dart
@@ -113,10 +111,31 @@ subsystem:
 | `controller.layout` | `sizeOf`, `nodeAt`, `portAt`, `nodesIn`, `boundsOf`, `onMeasured` |
 | `controller.clipboard` | `copy`, `cut`, `paste`, `duplicate` |
 | `controller.project` | the open document: `save`, `load`, `open`, `reset`, `isDirty` |
-| `controller.runner` | `run`, `cancel`, `stateOf` |
+| `controller.runner` | `run`, `cancel`, `stateOf`, `onEvent` |
+| `controller.emphasis` | a focus: `value`, `clear`, `revision` |
 
 There is no compatibility layer: `controller.undo()` does not exist, only
 `controller.history.undo()`.
+
+Two hooks, both null by default, tell a host what the controller is doing.
+`guard` is asked before every edit and abandons it by returning false —
+synchronously, since the graph cannot sit half-changed while a dialog is open;
+a host that needs to ask refuses, asks, and re-issues. `onEdit` is told after
+every edit that landed, with a `GraphEdit` naming the kind and the ids it
+touched. Undo and redo pass through neither: they restore a graph the hooks
+already saw on the way in.
+
+`applyLayout` is the other end of an arrangement the package does not ship:
+hand it a `GraphLayout` and it places whatever the algorithm answers as one
+edit and one undo step. It ignores `draggable`, on purpose — that flag is about
+a pointer, and a read-only canvas is exactly where an automatic layout is
+wanted. `controller.layout.onMeasured` fires once, when every node has a real
+extent, which is where a layout that depends on them should run.
+
+`controller.emphasis` lifts a set of nodes and connections clear of a scrim
+washed over everything else — every route between two nodes, everything a
+value reaches — without editing the graph to say so. It is not an edit, so it
+is never guarded, never reported and never undone.
 
 ### Node bodies
 
@@ -154,6 +173,13 @@ Nodes declare a `width`. `height` is optional:
   reported back, so connection endpoints follow. Measurement costs one extra
   frame; `controller.layout.hasUnmeasuredNodes` reports when extents are
   provisional.
+
+A prototype with `resizable: true` gets a grip in the node's bottom-right
+corner, bounded by `minWidth`, `maxWidth` and `maxHeight`. The width dragged is
+the node's own; the height is a floor under whatever the content needs, and
+dragging back to the natural height clears it. The ports do not move: an anchor
+is a fraction of the *declared* height, so a wire lands on the same row however
+tall the card is made.
 
 ### Ports
 
@@ -330,9 +356,19 @@ recomputed inside a loop is recomputed and a constant is not. A node that is not
 a function of its inputs — `random()`, `now()` — sets `pure: false`.
 
 `GraphRun` carries `trace`, `runCounts`, per-node `states`, `values` keyed by
-`PortRef`, and `diagnostics` — the things that would otherwise be silent: a node
-that ran twice, a data input with several wires, a read from a producer that had
-not run, a graph with no entry point.
+`PortRef`, `log` and `diagnostics` — the things that would otherwise be silent:
+a node that ran twice, a data input with several wires, a read from a producer
+that had not run, a graph with no entry point.
+
+**Watching a run as it happens.** `runner.onEvent` is handed a `GraphRunEvent`
+for every step — `RunStarted`, `NodeStarted`, `NodeFinished`, `MemoHit`,
+`DiagnosticRaised`, `LogEmitted`, `RunFinished` — a sealed hierarchy, so a
+`switch` is exhaustive. An executor says something into the same stream with
+`context.log(message)`. Values on the wires are withheld unless
+`runner.tracePayloads` is on, because a trace is the thing that gets written
+to a file and a value was produced by a node body the host did not write. The
+package keeps no log of its own: `GraphRunRecorder` is a fixture, and where the
+events go is the host's decision.
 
 ### Comments
 
@@ -659,8 +695,11 @@ cd example && flutter run
 
 ## Not included yet
 
-- Node resizing handles and grouping. Comments size themselves to their text;
-  nothing on the canvas can be resized by hand.
+- An arrangement of its own. `applyLayout` takes one from the host and places
+  it; which picture a graph should make is a question about what the nodes
+  mean.
+- Resizing a comment. It sizes itself to its text; only a node whose prototype
+  opts in can be resized by hand.
 - Resolution cannot change a node's `position`, `width` or `draggable`.
   `NodePrototype.defaultWidth` seeds `instantiate` but is not enforced after.
 
