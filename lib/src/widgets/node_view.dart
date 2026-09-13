@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -15,6 +16,7 @@ class NodeRenderState {
     required this.isHovered,
     required this.isDragging,
     required this.isConnectionTarget,
+    this.connectedPorts = const <String>{},
   });
 
   final bool isSelected;
@@ -24,6 +26,21 @@ class NodeRenderState {
   /// A connection being dragged is currently hovering this node.
   final bool isConnectionTarget;
 
+  /// Which of this node's ports have a wire on them right now, inputs and
+  /// outputs together.
+  ///
+  /// A body that draws an editor for a value a wire could also supply needs
+  /// this: without it the card has to show the editor unconditionally and
+  /// hope the reader knows the wire wins. The editor comes at no cost to the
+  /// reuse the whole node layer rests on — the set handed in is the *same*
+  /// instance frame after frame for as long as this node's wiring is
+  /// unchanged, so a wire drawn anywhere else on the canvas rebuilds nothing
+  /// here.
+  final Set<String> connectedPorts;
+
+  /// Whether [portId] has at least one wire on it.
+  bool isWired(String portId) => connectedPorts.contains(portId);
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -31,11 +48,19 @@ class NodeRenderState {
           other.isSelected == isSelected &&
           other.isHovered == isHovered &&
           other.isDragging == isDragging &&
-          other.isConnectionTarget == isConnectionTarget;
+          other.isConnectionTarget == isConnectionTarget &&
+          setEquals(other.connectedPorts, connectedPorts);
 
   @override
-  int get hashCode =>
-      Object.hash(isSelected, isHovered, isDragging, isConnectionTarget);
+  int get hashCode => Object.hash(
+    isSelected,
+    isHovered,
+    isDragging,
+    isConnectionTarget,
+    // Order-independent and cheap: a set of port ids is a handful of short
+    // strings, and hashing the whole of it on every comparison is not.
+    connectedPorts.length,
+  );
 }
 
 /// Builds the body of a node. The editor supplies the frame, ports, hit
@@ -62,6 +87,7 @@ class NodeView extends StatefulWidget {
     required this.isSelected,
     required this.isDragging,
     required this.isConnectionTarget,
+    required this.connectedPorts,
     required this.onContentSized,
     required this.onTap,
     required this.onDoubleTap,
@@ -87,6 +113,9 @@ class NodeView extends StatefulWidget {
   final bool isSelected;
   final bool isDragging;
   final bool isConnectionTarget;
+
+  /// Passed straight to [NodeRenderState.connectedPorts].
+  final Set<String> connectedPorts;
 
   final ValueChanged<Size> onContentSized;
 
@@ -222,6 +251,7 @@ class _NodeViewState extends State<NodeView> {
       isHovered: _hovered,
       isDragging: widget.isDragging,
       isConnectionTarget: widget.isConnectionTarget,
+      connectedPorts: widget.connectedPorts,
     );
 
     return NodeBox(

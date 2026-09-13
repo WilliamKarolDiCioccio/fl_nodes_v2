@@ -84,6 +84,16 @@ comment at the seam saying so; leave it there.
 `test/rebuild_isolation_test.dart` pins this. Watch it: the isolation is
 invisible when it breaks — everything still works, just slowly.
 
+**A node body is told which of its ports have a wire on them**
+(`NodeRenderState.connectedPorts`, and `isWired(portId)` over it), so a host
+can draw an editor for a value only while nothing is supplying it. It is the
+one piece of state a body gets that is *not* a fact about the node itself, and
+it costs nothing only because `_connectedPorts` hands back the very set it
+handed back last frame wherever a node's wiring did not move — so drawing one
+wire rebuilds the two nodes it touches and no others, and dragging a wired node
+rebuilds one. Contents-equality at the slot would give that back; the
+comparison there is `identical` on purpose.
+
 | per frame, 36 nodes drawn | before | after |
 | --- | --- | --- |
 | Node bodies built while dragging one node | 26 | 1 |
