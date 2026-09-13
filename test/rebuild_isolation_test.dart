@@ -14,8 +14,14 @@ import 'package:fl_nodes_v2/fl_nodes_v2.dart';
 void main() {
   final builds = <String, int>{};
 
+  /// What each body was last told about itself. A body that draws an editor
+  /// for a value a wire could also supply reads this, so it is part of what
+  /// these tests are pinning rather than a convenience.
+  final states = <String, NodeRenderState>{};
+
   Widget body(BuildContext context, GraphNode node, NodeRenderState state) {
     builds[node.id] = (builds[node.id] ?? 0) + 1;
+    states[node.id] = state;
     return const SizedBox.expand();
   }
 
@@ -135,19 +141,69 @@ void main() {
     }, reason: 'one node lost the outline and one gained it');
   });
 
-  testWidgets('wiring two nodes rebuilds no bodies at all', (tester) async {
+  testWidgets('wiring two nodes rebuilds those two and nobody else', (
+    tester,
+  ) async {
     final controller = await boot(tester);
 
     controller.connect(const PortRef('a', 'out'), const PortRef('b', 'in'));
     await tester.pump();
 
     expect(
-      builds,
-      isEmpty,
+      rebuilt(),
+      <String>{'a', 'b'},
       reason:
-          'a handle fills in when a wire lands on it, but handles are painted '
-          'now — so what used to redraw both ends is a repaint of one layer '
-          'and no node body is asked for again',
+          'a body is told which of its ports have a wire on them, so the two '
+          'ends have to be asked again — and the two bystanders must not be, '
+          'which is the whole reason the connectivity map hands back the set '
+          'it handed back last frame',
+    );
+    expect(states['a']!.isWired('out'), isTrue);
+    expect(states['b']!.isWired('in'), isTrue);
+    expect(
+      states['a']!.isWired('in'),
+      isFalse,
+      reason: 'the other end of the same node is still free',
+    );
+  });
+
+  testWidgets('unwiring says so, and again only at the two ends', (
+    tester,
+  ) async {
+    final controller = await boot(tester);
+    final id = controller.connect(
+      const PortRef('a', 'out'),
+      const PortRef('b', 'in'),
+    )!;
+    await tester.pump();
+    builds.clear();
+
+    controller.removeConnections(<String>[id]);
+    await tester.pump();
+
+    expect(rebuilt(), <String>{'a', 'b'});
+    expect(states['a']!.isWired('out'), isFalse);
+    expect(states['b']!.isWired('in'), isFalse);
+  });
+
+  testWidgets('dragging a wired node rebuilds only that node', (tester) async {
+    final controller = await boot(tester);
+    controller.connect(const PortRef('a', 'out'), const PortRef('b', 'in'));
+    await tester.pump();
+    builds.clear();
+
+    for (var i = 0; i < 5; i++) {
+      controller.translateNodes(<String>['a'], const Offset(3, 2));
+      await tester.pump();
+    }
+
+    expect(
+      rebuilt(),
+      <String>{'a'},
+      reason:
+          'moving a node bumps the revision while leaving the connection map '
+          'alone — the case the map is keyed on that map rather than on the '
+          'revision for, and the one a drag would otherwise pay per frame',
     );
   });
 

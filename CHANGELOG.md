@@ -1,3 +1,27 @@
+## Unreleased
+
+### A node body can see its own wiring
+
+- `NodeRenderState.connectedPorts` (`Set<String>`, `const {}`) — which of this
+  node's ports have a wire on them right now, inputs and outputs together, with
+  `NodeRenderState.isWired(portId)` over it. A host that draws an editor for a
+  value a wire could also supply had no way to ask: the body had to show the
+  editor unconditionally and hope the reader understood that the wire wins.
+  Everything else a body is handed is a fact about the node, and connectivity
+  is not, which is why it was missing rather than overlooked.
+
+  It is free, and that is the part worth stating. The connectivity map the port
+  painter already builds is memoised on the connection map's identity and hands
+  back the *previous* set wherever a node's wiring did not actually change, so
+  `_NodeSlot` can compare it with `identical` alongside everything else it
+  compares: drawing one wire rebuilds the two node bodies it lands on and
+  nothing else, and dragging a wired node still rebuilds exactly one body per
+  frame — the case the map is keyed on the connection map rather than on the
+  revision for. `test/rebuild_isolation_test.dart` pins all three:
+  *wiring two nodes rebuilds those two and nobody else*, *unwiring says so, and
+  again only at the two ends*, and *dragging a wired node rebuilds only that
+  node*.
+
 ## 0.3.0
 
 The first release since 0.1.0. The package carried `0.2.0` while these landed

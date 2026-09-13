@@ -1545,6 +1545,9 @@ class NodeEditorState extends State<NodeEditor> {
   ) {
     final origin = viewport.visibleSceneRect(size).topLeft;
     final generation = ++_slotGeneration;
+    // Free here: the map is memoised on the connection map's identity, and
+    // the port painter has already asked for it this frame.
+    final connected = _connectedPorts();
 
     // A frame paints immediately below the lowest of its own members, and no
     // lower: it has to sit under the nodes it holds without sinking beneath
@@ -1638,7 +1641,7 @@ class NodeEditorState extends State<NodeEditor> {
           key: slot.key,
           left: node.position.dx - origin.dx,
           top: node.position.dy - origin.dy,
-          child: slot.build(node, theme),
+          child: slot.build(node, theme, connected[node.id] ?? _noPorts),
         ),
       );
     }
@@ -1664,6 +1667,13 @@ class NodeEditorState extends State<NodeEditor> {
   }
 
   /// Which ports currently have a wire on them, for every node at once.
+  ///
+  /// Read by two layers: [PortsPainter], to fill a handle that has something
+  /// on it, and [_NodeSlot], so a host's body can draw itself differently for
+  /// a port a wire already answers. The second is why the identity discipline
+  /// below is load-bearing rather than a tidiness — a body is an arbitrary
+  /// subtree and rebuilding every one of them per wire is the thing this
+  /// whole layer exists to avoid.
   ///
   /// Asking per node per frame walked that node's connections and allocated a
   /// fresh set every time — and a fresh set is never identical to the last
@@ -1701,6 +1711,10 @@ class NodeEditorState extends State<NodeEditor> {
   }
 }
 
+/// Handed to a node with nothing wired to it: one instance, so a node that
+/// stays unwired compares identical frame after frame.
+const Set<String> _noPorts = <String>{};
+
 /// One node's widget and the callbacks that drive it, kept across rebuilds.
 ///
 /// Anything on the controller changing rebuilds the whole canvas: a pan, a
@@ -1727,6 +1741,7 @@ class _NodeSlot {
   bool _selected = false;
   bool _dragging = false;
   bool _connectionTarget = false;
+  Set<String>? _connected;
   NodeWidgetBuilder? _builder;
   bool _hasDoubleTap = false;
   bool _hasSecondaryTap = false;
@@ -1771,7 +1786,7 @@ class _NodeSlot {
     if (node != null) _editor._handleNodeResizeStart(node, globalPosition);
   }
 
-  Widget build(GraphNode node, NodeEditorTheme theme) {
+  Widget build(GraphNode node, NodeEditorTheme theme, Set<String> connected) {
     final editor = _editor;
     final selected = editor._controller.selection.containsNode(nodeId);
     final dragging = editor._draggingNodeIds.contains(nodeId);
@@ -1798,6 +1813,11 @@ class _NodeSlot {
         _selected == selected &&
         _dragging == dragging &&
         _connectionTarget == isTarget &&
+        // By identity, which is exactly what `_connectedPorts` goes to the
+        // trouble of preserving: contents-equality here would be a set walk
+        // per node per frame, and a fresh set per node would rebuild the
+        // whole canvas every time one wire was drawn.
+        identical(_connected, connected) &&
         _hasDoubleTap == hasDoubleTap &&
         _hasSecondaryTap == hasSecondaryTap) {
       return cached;
@@ -1808,6 +1828,7 @@ class _NodeSlot {
     _selected = selected;
     _dragging = dragging;
     _connectionTarget = isTarget;
+    _connected = connected;
     _builder = builder;
     _hasDoubleTap = hasDoubleTap;
     _hasSecondaryTap = hasSecondaryTap;
@@ -1820,6 +1841,7 @@ class _NodeSlot {
         isSelected: selected,
         isDragging: dragging,
         isConnectionTarget: isTarget,
+        connectedPorts: connected,
         onContentSized: _onContentSized,
         onTap: _onTap,
         onDoubleTap: hasDoubleTap ? _onDoubleTap : null,
