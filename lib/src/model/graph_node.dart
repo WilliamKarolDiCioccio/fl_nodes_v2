@@ -22,6 +22,7 @@ class GraphNode {
     this.minHeight,
     this.ports = const <NodePort>[],
     this.data = const <String, Object?>{},
+    this.metadata = const <String, Object?>{},
     this.draggable = true,
     this.selectable = true,
   });
@@ -63,6 +64,17 @@ class GraphNode {
   /// Arbitrary payload for the host application.
   final Map<String, Object?> data;
 
+  /// Annotations the host's *user* attaches to a node: plain JSON the editor
+  /// never reads and no prototype ever shapes.
+  ///
+  /// Beside [data] rather than in it, because [data] is what a prototype
+  /// declares and resolution keeps in step — `seedAndPrune` drops a key a
+  /// dynamic family stopped declaring — whereas what somebody wrote *about* a
+  /// node is nobody's to prune. Nested as deep as the host likes; encoded
+  /// through the same path as [data], so a value the codec cannot spell is
+  /// refused the same way. Omitted from a document when empty.
+  final Map<String, Object?> metadata;
+
   final bool draggable;
   final bool selectable;
 
@@ -90,6 +102,7 @@ class GraphNode {
     double? minHeight,
     List<NodePort>? ports,
     Map<String, Object?>? data,
+    Map<String, Object?>? metadata,
     bool? draggable,
     bool? selectable,
   }) {
@@ -102,6 +115,7 @@ class GraphNode {
       minHeight: minHeight ?? this.minHeight,
       ports: ports ?? this.ports,
       data: data ?? this.data,
+      metadata: metadata ?? this.metadata,
       draggable: draggable ?? this.draggable,
       selectable: selectable ?? this.selectable,
     );
@@ -124,6 +138,7 @@ class GraphNode {
     minHeight: minHeight,
     ports: ports,
     data: data,
+    metadata: metadata,
     draggable: draggable,
     selectable: selectable,
   );
@@ -139,6 +154,7 @@ class GraphNode {
     minHeight: minHeight,
     ports: ports,
     data: data,
+    metadata: metadata,
     draggable: draggable,
     selectable: selectable,
   );
@@ -155,6 +171,7 @@ class GraphNode {
           other.minHeight == minHeight &&
           listEquals(other.ports, ports) &&
           payloadEquals(other.data, data) &&
+          payloadEquals(other.metadata, metadata) &&
           other.draggable == draggable &&
           other.selectable == selectable;
 
@@ -168,6 +185,7 @@ class GraphNode {
     minHeight,
     Object.hashAll(ports),
     Object.hashAllUnordered(data.keys),
+    Object.hashAllUnordered(metadata.keys),
     draggable,
     selectable,
   );

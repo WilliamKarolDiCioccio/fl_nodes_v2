@@ -160,6 +160,23 @@ void main() {
       );
     });
 
+    test('writing metadata is an edit, and writing it back is not', () {
+      final controller = controllerWith(<GraphNode>[node('a')]);
+
+      controller.setNodeMetadata('a', <String, Object?>{'k': 1});
+      expect(controller.project.isDirty, isTrue);
+
+      controller.history.undo();
+      expect(controller.project.isDirty, isFalse);
+
+      controller.setNodeMetadata('a', const <String, Object?>{});
+      expect(
+        controller.project.isDirty,
+        isFalse,
+        reason: 'equal metadata is the map the node already had',
+      );
+    });
+
     test('measuring an auto-height node is not an edit', () {
       final controller = controllerWith(const <GraphNode>[]);
       controller.addNode(const GraphNode(id: 'auto', position: Offset.zero));

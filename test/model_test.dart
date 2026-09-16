@@ -75,6 +75,55 @@ void main() {
     });
   });
 
+  group('GraphNode.metadata', () {
+    final notes = <String, Object?>{
+      'draft': true,
+      'tags': <String>['a', 'b'],
+      'nested': <String, Object?>{'depth': 2},
+    };
+
+    test('two nodes with equal metadata are equal and hash alike', () {
+      final one = node('a').copyWith(metadata: notes);
+      final other = node('a').copyWith(
+        metadata: <String, Object?>{
+          'draft': true,
+          'tags': <String>['a', 'b'],
+          'nested': <String, Object?>{'depth': 2},
+        },
+      );
+
+      expect(one, other, reason: 'compared by value, as data is');
+      expect(one.hashCode, other.hashCode);
+      expect(
+        one,
+        isNot(node('a').copyWith(metadata: <String, Object?>{'draft': false})),
+      );
+    });
+
+    test('copyWith(metadata:) replaces rather than merges', () {
+      final first = node('a').copyWith(metadata: notes);
+
+      final replaced = first.copyWith(metadata: <String, Object?>{'x': 1});
+
+      expect(replaced.metadata, <String, Object?>{'x': 1});
+      expect(first.metadata, notes, reason: 'the original is untouched');
+    });
+
+    test('a resize keeps it', () {
+      final annotated = node('a').copyWith(metadata: notes);
+
+      expect(
+        annotated.withMinHeight(200).metadata,
+        notes,
+        reason:
+            'withMinHeight rebuilds every field by hand, and a corner drag '
+            'is exactly the edit that would lose a field it forgot',
+      );
+      expect(annotated.withHeight(null).metadata, notes);
+      expect(annotated.withData(<String, Object?>{'k': 1}).metadata, notes);
+    });
+  });
+
   group('NodeGeometry', () {
     test('spreads same-side ports evenly', () {
       const target = GraphNode(

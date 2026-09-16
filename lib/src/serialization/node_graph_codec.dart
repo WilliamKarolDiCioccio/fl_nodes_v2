@@ -197,6 +197,11 @@ class NodeGraphCodec {
         'minHeight': _finite(node.minHeight!, path, 'minHeight'),
       'draggable': node.draggable,
       'selectable': node.selectable,
+      // The third thing omitted when empty, after `meta` and `groups`: a
+      // document from before the key reads back identical, and one whose
+      // author wrote nothing on a node carries no key for it.
+      if (node.metadata.isNotEmpty)
+        'metadata': path.at('metadata', () => _encodeMap(node.metadata, path)),
       if (fields.isNotEmpty) 'fields': fields,
       if (groups.isNotEmpty) 'ports': groups,
     };
@@ -673,6 +678,12 @@ class NodeGraphCodec {
           : reader.at('minHeight', () => reader.number(json['minHeight'])),
       ports: ports,
       data: data,
+      metadata: json['metadata'] == null
+          ? const <String, Object?>{}
+          : reader.at(
+              'metadata',
+              () => _readMetadata(json['metadata'], reader),
+            ),
       draggable: json['draggable'] == null
           ? true
           : reader.at('draggable', () => reader.boolean(json['draggable'])),
@@ -798,6 +809,19 @@ class NodeGraphCodec {
       reader.at('nodeId', () => reader.string(map['nodeId'])),
       reader.at('portId', () => reader.string(map['portId'])),
     );
+  }
+
+  /// A node's metadata, whichever way the encoder spelt it.
+  ///
+  /// Read through [_readValue] rather than [_readMap] on purpose: a map whose
+  /// author named a key `$type` was wrapped as a tagged map on the way out,
+  /// and only the value reader knows to take that wrapper off again. Anything
+  /// that decodes to something other than a map — a tagged payload, say — is
+  /// refused here rather than handed to the host as metadata it never wrote.
+  Map<String, Object?> _readMetadata(Object? json, DocumentReader reader) {
+    final decoded = _readValue(json, reader);
+    if (decoded is Map<String, Object?>) return decoded;
+    return reader.fail('metadata must be an object');
   }
 
   Map<String, Object?> _readMap(

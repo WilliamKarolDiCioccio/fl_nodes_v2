@@ -10,6 +10,9 @@ enum GraphEditKind {
   replace,
 
   addNodes,
+
+  /// Something about a node other than its position changed — a field, its
+  /// size, its ports, or its `metadata`.
   updateNodes,
   removeNodes,
 

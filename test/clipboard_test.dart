@@ -127,6 +127,24 @@ void main() {
       );
     });
 
+    test('a pasted node keeps its metadata', () {
+      final controller = controllerWith(<GraphNode>[
+        node('a').copyWith(
+          metadata: <String, Object?>{
+            'tags': <String>['draft'],
+          },
+        ),
+      ]);
+
+      controller.selection.selectNodes(<String>['a']);
+      expect(controller.clipboard.copy(), isTrue);
+      final pasted = controller.clipboard.paste().single;
+
+      expect(controller.graph.node(pasted)!.metadata, <String, Object?>{
+        'tags': <String>['draft'],
+      });
+    });
+
     test('leaves behind a wire to a node that was not selected', () {
       final controller = controllerWith(
         <GraphNode>[node('a'), node('b', position: const Offset(200, 0))],

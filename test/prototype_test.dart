@@ -111,6 +111,28 @@ void main() {
       expect(identical(result.graph, graph), isTrue);
     });
 
+    test('resolution keeps a node\'s metadata', () {
+      final registry = NodePrototypeRegistry(<NodePrototype>[
+        formatPrototype(),
+      ]);
+      final notes = <String, Object?>{
+        'note': 'hello',
+        'nested': <String, Object?>{'k': 1},
+      };
+      final graph = NodeGraph(
+        nodes: <GraphNode>[node('a').copyWith(metadata: notes)],
+      );
+
+      final resolved = registry.resolve(graph, seeds: <String>['a']).graph;
+
+      expect(portIds(resolved.node('a')!), <String>['out']);
+      expect(
+        resolved.node('a')!.metadata,
+        notes,
+        reason: 'no family declares it, so seedAndPrune never sees it',
+      );
+    });
+
     test('a static family materialises on a node added with no ports', () {
       final registry = NodePrototypeRegistry(<NodePrototype>[
         formatPrototype(),
