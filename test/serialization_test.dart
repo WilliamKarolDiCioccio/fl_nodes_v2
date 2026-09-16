@@ -355,6 +355,14 @@ void main() {
                 'b': <int>[2, 3],
               },
             },
+            metadata: <String, Object?>{
+              'author': 'me',
+              'tags': <String>['draft', 'act one'],
+              'notes': <String, Object?>{
+                'reviewed': false,
+                'scores': <num>[1, 2.5],
+              },
+            },
             ports: <NodePort>[
               const NodePort.input(id: 'in'),
               const NodePort.output(
@@ -403,6 +411,78 @@ void main() {
       );
 
       expect(roundTrip(graph), graph);
+    });
+
+    test('a node with no metadata writes no key', () {
+      final json = roundTripJson(NodeGraph(nodes: <GraphNode>[seed('a')]));
+      final node =
+          (json['nodes']! as List<Object?>).single as Map<String, Object?>;
+
+      expect(
+        node.containsKey('metadata'),
+        isFalse,
+        reason:
+            'an empty map is the default, and a default that is written is '
+            'one that cannot be changed later without reinterpreting every '
+            'document already on disk — the rule `meta` and `groups` keep',
+      );
+    });
+
+    test('a document written before metadata existed reads as empty', () {
+      final json = roundTripJson(
+        NodeGraph(
+          nodes: <GraphNode>[
+            seed('a').copyWith(metadata: <String, Object?>{'k': 1}),
+          ],
+        ),
+      );
+      final node =
+          (json['nodes']! as List<Object?>).single as Map<String, Object?>;
+      expect(node.remove('metadata'), isNotNull);
+
+      final decoded = const NodeGraphCodec().decode(json).graph;
+
+      expect(decoded.node('a')!.metadata, isEmpty);
+    });
+
+    test(r'a metadata key called $type round-trips', () {
+      final graph = NodeGraph(
+        nodes: <GraphNode>[
+          seed('a').copyWith(
+            metadata: <String, Object?>{
+              r'$type': 'the author picked this word',
+              'inner': <String, Object?>{r'$type': 'and this one'},
+            },
+          ),
+        ],
+      );
+
+      expect(
+        roundTrip(graph).node('a')!.metadata,
+        graph.node('a')!.metadata,
+        reason:
+            'the encoder wraps a map holding that key as a tagged map, and '
+            'the metadata reader has to take the wrapper off again at the '
+            'top level as well as inside a value',
+      );
+    });
+
+    test('metadata that is not an object is refused', () {
+      final json = roundTripJson(NodeGraph(nodes: <GraphNode>[seed('a')]));
+      final node =
+          (json['nodes']! as List<Object?>).single as Map<String, Object?>;
+      node['metadata'] = 'a string';
+
+      expect(
+        () => const NodeGraphCodec().decode(json),
+        throwsA(
+          isA<GraphDocumentFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('metadata'),
+          ),
+        ),
+      );
     });
 
     test('a document written before kinds existed reads as data', () {

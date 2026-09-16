@@ -64,6 +64,16 @@ void main() {
       expect(edits.single.nodeIds, <String>{'a'});
     });
 
+    test('writing metadata on one is an update to it', () {
+      final edits = <GraphEdit>[];
+      final controller = watched(edits);
+
+      controller.setNodeMetadata('a', <String, Object?>{'k': 1});
+
+      expect(edits.single.kind, GraphEditKind.updateNodes);
+      expect(edits.single.nodeIds, <String>{'a'});
+    });
+
     test('moving one, which a host usually wants to ignore', () {
       final edits = <GraphEdit>[];
       final controller = watched(edits);
@@ -131,6 +141,7 @@ void main() {
       final controller = watched(edits);
 
       controller.updateNode('a', (one) => one);
+      controller.setNodeMetadata('a', const <String, Object?>{});
 
       expect(
         edits,
@@ -174,6 +185,20 @@ void main() {
 
       controller.removeNodes(<String>['a']);
 
+      expect(controller.history.canUndo, isFalse);
+    });
+
+    test('a frozen canvas refuses metadata too', () {
+      final controller = controllerWith(<GraphNode>[node('a')]);
+      controller.guard = (_) => false;
+
+      controller.setNodeMetadata('a', <String, Object?>{'k': 1});
+
+      expect(
+        controller.graph.node('a')!.metadata,
+        isEmpty,
+        reason: 'it goes through the one funnel every edit does',
+      );
       expect(controller.history.canUndo, isFalse);
     });
 

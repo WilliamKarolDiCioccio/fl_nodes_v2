@@ -219,6 +219,22 @@ void main() {
     expect(rebuilt(), <String>{'d'});
   });
 
+  testWidgets('writing metadata on one node rebuilds only that node', (
+    tester,
+  ) async {
+    final controller = await boot(tester);
+
+    controller.setNodeMetadata('d', <String, Object?>{'note': 'hello'});
+    await tester.pump();
+
+    expect(
+      rebuilt(),
+      <String>{'d'},
+      reason:
+          'the slot compares the node instance, and only one instance moved',
+    );
+  });
+
   testWidgets('swapping the controller drops the cached widgets', (
     tester,
   ) async {

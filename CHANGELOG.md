@@ -22,6 +22,44 @@
   again only at the two ends*, and *dragging a wired node rebuilds only that
   node*.
 
+### Every node carries metadata of its own
+
+- `GraphNode.metadata` (`Map<String, Object?>`, `const {}`) — annotations a
+  host's *user* attaches to a node, beside `data` rather than in it. `data` is
+  what a prototype declares and resolution keeps in step, and `seedAndPrune`
+  drops a key a dynamic family stopped declaring, so a host that kept somebody's
+  notes there was keeping them somewhere a prototype could take them away. The
+  editor never reads the new map; the host decides what it is for. It nests as
+  deep as the host likes and is encoded through the same path as `data`, so a
+  value the codec cannot spell is refused the same way.
+
+  `copyWith(metadata:)` replaces it, and `NodeEditorController.setNodeMetadata(id, map)`
+  is the one mutator: through `_mutate`, so a guard sees it, `onEdit` reports
+  it as `updateNodes`, one `Ctrl+Z` puts the old map back, and an equal map is
+  not an edit at all — a dialog closed with the rows it opened with leaves the
+  history and the dirty flag alone. Prototypes are not re-resolved, because
+  nothing a prototype answers reads it. There is no `withMetadata`, on purpose:
+  `withData` *merges*, and a verb of the same shape that replaced would read as
+  the same thing doing the opposite.
+
+  On disk it is a `metadata` key on the node, written only when non-empty and
+  read absent as empty — the third thing after `meta` and `groups` to follow
+  that rule, and the same bargain `minHeight` made: a document from before the
+  key reads back identical, `NodeGraphCodec.version` stays at 1, and an
+  **older build of this package re-saving a document drops the key** rather
+  than refusing the file. That is a loss the host should know about; every
+  wire, port and field survives it. A key an author literally named `$type`
+  is wrapped as a tagged map on the way out and unwrapped on the way in.
+
+  `serialization_test.dart` *every optional field survives*, *a node with no
+  metadata writes no key*, *a document written before metadata existed reads
+  as empty* and *a metadata key called `$type` round-trips*;
+  `controller_test.dart` *setNodeMetadata is one undo step* and *a metadata
+  edit does not enter the resolver*; `graph_edit_test.dart` *writing metadata
+  on one is an update to it* and *a frozen canvas refuses metadata too*;
+  `model_test.dart` *a resize keeps it*; `rebuild_isolation_test.dart`
+  *writing metadata on one node rebuilds only that node*.
+
 ## 0.3.0
 
 The first release since 0.1.0. The package carried `0.2.0` while these landed

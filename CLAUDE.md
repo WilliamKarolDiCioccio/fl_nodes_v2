@@ -598,6 +598,23 @@ An unknown node type is not an error. It decodes to an ordinary `GraphNode` and
 round-trips untouched — a document you cannot open is worse than a node you
 cannot edit.
 
+**`GraphNode.metadata` is the package's key on the node, not a host field in
+`data`.** It is what a host's *user* writes about a node — beside `data`
+because `data` is what a prototype shapes and `seedAndPrune` may take an
+unknown key away, and nobody's notes should be a prototype's to prune. The
+editor never reads it, resolution never sees it, and `setNodeMetadata` is the
+one mutator. It is the third thing written only when non-empty and read absent
+as empty, after `meta` and `groups`, and it made the bargain `minHeight` made
+in place of a `version` bump: an **older build re-saving a document drops it
+silently** while everything else survives. That was accepted rather than
+overlooked, because the alternative stamps a new envelope version on every
+document the new build touches, metadata or not, and refuses them all
+everywhere else. It is read through `_readValue` rather than `_readMap`, which
+is the difference between a top-level key called `$type` round-tripping and
+not — the wrapper `_encodeMap` puts on such a map is only taken off by the
+value reader. (`meta` and the field buckets go through `_readMap` and do not
+unwrap it; nobody has hit that.)
+
 **There are two version axes and they are not interchangeable.** `version` is
 this package's and governs the envelope: nodes, connections, groups, ports.
 `schema` is the *host's* and governs what a node's `type` means and what the

@@ -17,6 +17,7 @@ import '../model/node_connection.dart';
 import '../model/node_graph.dart';
 import '../model/node_group.dart';
 import '../model/node_port.dart';
+import '../model/payload_equality.dart';
 import '../model/port_ref.dart';
 import '../prototype/node_execution.dart';
 import '../prototype/node_prototype_registry.dart';
@@ -589,6 +590,27 @@ class NodeEditorController extends ChangeNotifier {
         nodeIds: <String>{connection.from.nodeId, connection.to.nodeId},
         connectionIds: <String>{id},
       ),
+    );
+  }
+
+  /// Replaces a node's [GraphNode.metadata] wholesale.
+  ///
+  /// Replaces rather than merges, because a merge cannot take a key away and
+  /// the host that hands over a whole map has already decided what it holds.
+  /// An equal map is not an edit: nothing is recorded and no listener hears
+  /// of it, so a dialog that closes with the same rows it opened with leaves
+  /// the history and the dirty flag exactly as they were. Reported as
+  /// [GraphEditKind.updateNodes] like any other change to a node. Prototypes
+  /// are not re-resolved — nothing a prototype answers reads metadata — and
+  /// the graph's geometry does not move.
+  void setNodeMetadata(String id, Map<String, Object?> metadata) {
+    final node = _graph.nodes[id];
+    if (node == null || payloadEquals(node.metadata, metadata)) return;
+    _mutate(
+      _graph.putNode(
+        node.copyWith(metadata: Map<String, Object?>.unmodifiable(metadata)),
+      ),
+      GraphEdit(kind: GraphEditKind.updateNodes, nodeIds: <String>{id}),
     );
   }
 

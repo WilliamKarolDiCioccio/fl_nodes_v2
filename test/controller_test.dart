@@ -227,6 +227,89 @@ void main() {
     });
   });
 
+  group('metadata', () {
+    test(
+      'setNodeMetadata is one undo step, and undo puts the old map back',
+      () {
+        final controller = controllerWith(<GraphNode>[
+          node('a').copyWith(metadata: <String, Object?>{'draft': true}),
+        ]);
+        addTearDown(controller.dispose);
+
+        controller.setNodeMetadata('a', <String, Object?>{
+          'draft': false,
+          'notes': <String, Object?>{
+            'reviewed': <String>['me'],
+          },
+        });
+
+        expect(controller.graph.node('a')!.metadata, <String, Object?>{
+          'draft': false,
+          'notes': <String, Object?>{
+            'reviewed': <String>['me'],
+          },
+        });
+        controller.history.undo();
+        expect(controller.graph.node('a')!.metadata, <String, Object?>{
+          'draft': true,
+        });
+        expect(controller.history.canUndo, isFalse);
+      },
+    );
+
+    test('setting equal metadata is a no-op', () {
+      final controller = controllerWith(<GraphNode>[
+        node('a').copyWith(
+          metadata: <String, Object?>{
+            'tags': <String>['x'],
+          },
+        ),
+      ]);
+      addTearDown(controller.dispose);
+      final revision = controller.revision;
+
+      // A fresh map, equal by value and not by identity — what a dialog hands
+      // back when it is closed without a change.
+      controller.setNodeMetadata('a', <String, Object?>{
+        'tags': <String>['x'],
+      });
+
+      expect(controller.revision, revision);
+      expect(
+        controller.history.canUndo,
+        isFalse,
+        reason:
+            'an undo step that changes nothing is a step the user cannot '
+            'see and has to press through',
+      );
+    });
+
+    test('a node that is not there is left alone', () {
+      final controller = controllerWith(<GraphNode>[node('a')]);
+      addTearDown(controller.dispose);
+      final revision = controller.revision;
+
+      controller.setNodeMetadata('missing', <String, Object?>{'k': 1});
+
+      expect(controller.revision, revision);
+    });
+
+    test('the map handed in is not the map the node keeps', () {
+      final controller = controllerWith(<GraphNode>[node('a')]);
+      addTearDown(controller.dispose);
+      final handed = <String, Object?>{'k': 1};
+
+      controller.setNodeMetadata('a', handed);
+      handed['k'] = 2;
+
+      expect(
+        controller.graph.node('a')!.metadata['k'],
+        1,
+        reason: 'the graph is an immutable snapshot the history relies on',
+      );
+    });
+  });
+
   group('selection', () {
     test('drops ids that no longer exist', () {
       final controller = controllerWith(<GraphNode>[node('a'), node('b')]);
@@ -560,6 +643,46 @@ void main() {
       );
       expect(builds, greaterThan(afterAdd));
       expect(portIds(controller, 'a'), <String>['arg_0', 'arg_1']);
+    });
+
+    test('a metadata edit does not enter the resolver', () {
+      var builds = 0;
+      final controller = NodeEditorController(
+        prototypes: NodePrototypeRegistry(<NodePrototype>[
+          NodePrototype(
+            type: 'format',
+            ports: <PortFamily>[
+              DynamicPortFamily(
+                id: 'args',
+                build: (context) {
+                  builds++;
+                  return <NodePort>[
+                    for (final match in placeholder.allMatches(
+                      context.fieldOr<String>('format', ''),
+                    ))
+                      NodePort.input(id: 'arg_${match.group(1)}'),
+                  ];
+                },
+              ),
+            ],
+          ),
+        ]),
+      );
+      addTearDown(controller.dispose);
+      controller.addNode(seed('a', data: <String, Object?>{'format': '{0}'}));
+      final afterAdd = builds;
+
+      controller.setNodeMetadata('a', <String, Object?>{'note': 'hello'});
+
+      expect(
+        builds,
+        afterAdd,
+        reason: 'nothing a prototype answers reads metadata',
+      );
+      expect(portIds(controller, 'a'), <String>['arg_0']);
+      expect(controller.graph.node('a')!.metadata, <String, Object?>{
+        'note': 'hello',
+      });
     });
 
     test('wiring the last exit spawns another', () {
