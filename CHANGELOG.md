@@ -1,733 +1,152 @@
-## Unreleased
+# Changelog
 
-### Wires can be drawn in right angles
+What a host can do with each version, newest first. The reasoning behind a
+change lives beside the code in `CLAUDE.md`; this file only says what changed.
 
-- `NodeEditorTheme.connectionStyle` (`ConnectionStyle`, `curved`) — every
-  wire on the canvas as a bezier, as before, or as axis-aligned legs with
-  rounded corners: a Z between facing ports, an L between perpendicular ones,
-  and a lane round the back when the target is behind the source. Readability
-  on a dense board was the ask, and it is a preference rather than a
-  replacement because the two fail differently — a bezier under a card reads
-  as a swoop, a horizontal leg under one reads as a mistake, and neither style
-  routes around cards. `connectionStub` (24) is how far a wire runs straight
-  out of a port before it may turn, `connectionCornerRadius` (8) the arc at
-  each corner.
+## 0.4.0
 
-  One painter, two routers: the painter never built a path, `ConnectionLayout`
-  did through `ConnectionPath.build`, and everything downstream samples the
-  `Path`. `ConnectionSpan` is the seam — `CubicSegment` or `PolylineSpan`, one
-  per consecutive pair of `[from, …waypoints, to]` — and `nearestOnRoute` walks
-  either, projecting onto a leg exactly rather than sampling it.
-  `OrthogonalRoute.legs` is templates ranked by corners, then length, then a
-  fixed order, with one hard filter: no two consecutive legs anti-parallel.
-  Corners are rounded over the whole wire, since the corner at a waypoint has
-  one leg in each span. The layout bakes the style in with the other
-  settings, so a switch is one rebuild.
+### Wires
 
-  Waypoints mean the same in both styles — points the wire passes through — so
-  switching moves no data; in right angles each is a corner, and the router is
-  told how the wire arrived at one so it sets off across that axis rather than
-  running straight through and turning somewhere nobody asked. A dragged
-  handle snaps onto the row or column of its neighbour on either side
-  (`NodeEditorTheme.waypointAlignSnap`, 6 screen px, each axis on its own),
-  because a corner one pixel off its neighbour draws a one-pixel jog. Arrows
-  are squared to the nearer axis (`ConnectionPath.arrowsAlong(axisAligned:)`)
-  so a head on a corner's arc does not take the arc's slant. The pending wire
-  takes the style too. The example's toolbar has the toggle.
+- **Wires can be routed through waypoints.** Double-click a wire to add a
+  handle on the curve, drag the handle to route the wire, double-click it to
+  remove it; the wire's context menu offers *Add waypoint here*, *Remove
+  waypoint* and *Clear waypoints*. `NodeConnection.waypoints`
+  (`List<Offset>`, `const []`), with `setConnectionWaypoints`,
+  `insertWaypoint`, `moveWaypoint` and `removeWaypoint` on the controller and
+  `GraphEditKind.routeConnection` for `guard` and `onEdit`. A drag that moves
+  both ends of a wire carries its route; `applyLayout` clears the routes of
+  the wires it moves; a copy pastes with its route. Written to the document
+  as an optional `waypoints` key, without a format version bump — an older
+  build reads the wire and drops the route on its next save.
+  `NodeEditorTheme.waypointRadius` (4.5) and `waypointHitRadius` (9);
+  `NodeMenuConnectionTarget` gains `waypoint` and `insertion`.
+- **Wires can be drawn in right angles.** `NodeEditorTheme.connectionStyle`
+  (`ConnectionStyle`, `curved`) — `orthogonal` draws every wire as
+  axis-aligned legs with rounded corners; a waypoint is then a corner, and a
+  dragged handle snaps onto the row or column of its neighbours
+  (`waypointAlignSnap`, 6 screen px). `connectionStub` (24) is how far a wire
+  runs straight out of a port before it may turn, `connectionCornerRadius`
+  (8) the arc at each corner. Neither style routes around cards.
+  `ConnectionPath.build` takes `style`, `via`, `stub` and `cornerRadius`;
+  `ConnectionPath.nearestOnRoute`, `ConnectionSpan`, `CubicSegment`,
+  `PolylineSpan`, `RoutePoint` and `OrthogonalRoute` are public.
+- **A drag held against the edge of the canvas scrolls it**, for a wire, a
+  node, a group or a waypoint handle. `NodeEditor.edgeScroll`
+  (`EdgeScrollConfig?`, `const EdgeScrollConfig()`) with `margin` (40) and
+  `speed` (600 px/s), both in screen pixels; `null` turns it off.
 
-  The curved default is untouched: `ConnectionPath.build` with no style is the
-  same cubic to the control point. `test/orthogonal_links_test.dart` pins the
-  Z, the straight row, the lane behind (on and off the row), the same-side
-  case, a sweep of every side pair over a grid of ends for axis-alignment and
-  no U-turn, the corner at a waypoint, the rounding, exact projection, the
-  squared arrows, the one-rebuild switch, and the alignment snap on and off.
+### Nodes
 
-### A wire can be routed through waypoints
-
-- `NodeConnection.waypoints` (`List<Offset>`, `const []`) — scene points a
-  wire is routed *through*, in order, placed on the wire by the user. Not
-  bezier control points: the user never sees those. Each waypoint takes the
-  direction that bisects the two spans meeting there and each span keeps its
-  own `controlArm`, so the wire is smooth through every handle, the two ends
-  leave and arrive exactly as before, and **a wire with no waypoints is the
-  very same cubic it was** — `ConnectionPath.segments` pins the control
-  points. A dense graph's wires can be pulled clear of what they cross, which
-  is what a plain port-to-port curve cannot do however it is tuned.
-
-  On the wire rather than an entity of their own, on purpose: a handle with no
-  wire means nothing, and the wire already has an undo entry, a codec and a
-  place in the clipboard. They are not selectable either — a fourth
-  selectable kind would have reached the marquee, delete and the clipboard
-  for a mark on a wire. `ConnectionPath.build(via:)`,
-  `ConnectionPath.nearestOnRoute` (the segment a point lies on and the
-  closest point of the curve to it) and `CubicSegment`/`RoutePoint` are the
-  geometry; everything downstream — hit-testing, the arrows, the caption
-  midpoint, the emphasis re-stroke — samples the `Path` and needed nothing.
-
-  On the canvas: **double-click a wire** to add a waypoint where it was
-  clicked — on the curve, so the wire does not jump to meet the pointer — and
-  the curve nudges slightly as it takes the bisector's tangent there; **drag
-  a handle** to route the wire (one undo step, the wire selected on the way,
-  snapped to `snapToGrid`); **double-click a
-  handle** to remove it. The wire's context menu gains *Add waypoint here*,
-  *Remove waypoint* on a handle, and *Clear waypoints*;
-  `NodeMenuConnectionTarget` carries `waypoint` and `insertion` for them,
-  rather than a new target, so a host's `build` hook sees the wire it always
-  did. The canvas synthesises the double tap itself, as `NodeView` does, so
-  no `DoubleTapGestureRecognizer` holds every click for the timeout. Handles
-  are painted in `ConnectionsPainter`, batched by colour with one border pass
-  in the canvas colour, at the detail zoom only and hittable under the same
-  gate (`NodeEditorTheme.waypointRadius` (4.5), `waypointHitRadius` (9)).
-
-  `setConnectionWaypoints`, `insertWaypoint`, `moveWaypoint` and
-  `removeWaypoint` on the controller, through `_mutate` as
-  `GraphEditKind.routeConnection`. Two rules about moving nodes: a wire whose
-  **both** ends move by a drag carries its route along (a selection dragged
-  across the canvas keeps its shape); a wire with one end moving keeps its
-  route pinned and the curve re-solves. **`applyLayout` clears the routes of
-  every wire it moved** — an arrangement is a new picture and a hand-drawn
-  route for the old one is stale in it — in the same undo step. A copy pastes
-  with its route in the same shape.
-
-  On disk it is one optional key, `waypoints: [[x, y], …]`, written only when
-  non-empty; `NodeGraphCodec.version` did not move for it, the bargain
-  `minHeight` and `metadata` already made: an older build reads the wire and
-  drops the route on its next save, which is a loss worth knowing about and
-  not a half-read, where a bump would refuse every document this build
-  touched everywhere else. The one trap paid for is the cache:
-  `ConnectionLayout` kept a curve while its two endpoints stood still, and a
-  handle moves neither, so the waypoints joined the per-curve key — the
-  caption bug from the other side. `test/waypoint_test.dart` pins all of it,
-  and `context_menu_test.dart` the three menu rows.
-### A drag held against the edge scrolls the canvas
-
-- `NodeEditor.edgeScroll` (`EdgeScrollConfig?`, `const EdgeScrollConfig()`)
-  — holding a wire, a node or a group against the side of the viewport pans
-  the camera toward that side, so a target off screen can be reached without
-  letting go to zoom out first. The legacy editor had it and the port to v2
-  lost it; a wire that could only be landed after a zoom-out was the
-  complaint. `null` turns it off. The marquee and the corner grip are not
-  scrolled.
-
-  `EdgeScrollConfig.margin` (40) is how far in from each edge the zone
-  reaches and `speed` (600) how fast the canvas moves at the edge, both in
-  *screen* pixels so the feel does not change with the zoom. The pull ramps
-  linearly from nothing at the inner boundary to `speed` at the edge and holds
-  there beyond it, so a pointer dragged clean out of the window scrolls at
-  full speed. `velocityAt` is the arithmetic, on the config so it is testable
-  without a widget.
-
-  It runs on a `Ticker`, not a timer: muted with the widget's `TickerMode`,
-  stopped by the frame clock in tests, and stepped by elapsed time so `speed`
-  is a per-second figure rather than a per-frame one. After each step the
-  drag is re-applied at the pointer that has not moved, which is what keeps
-  the held node under the cursor and the wire's end on it while the scene
-  moves underneath. That needed the node drag's delta to move from screen
-  space to scene space — `toScene(pointer) - origin` — which also puts a
-  wheel-zoom mid-drag right for free. `test/edge_scroll_test.dart` pins the
-  ramp, a node and a group carried by the scroll, a wire reaching a node
-  that started off screen, and that the scroll stops with the pointer
-  leaving the margin, the drag ending, Escape, or `edgeScroll: null`.
-
-### A node body can see its own wiring
-
-- `NodeRenderState.connectedPorts` (`Set<String>`, `const {}`) — which of this
-  node's ports have a wire on them right now, inputs and outputs together, with
-  `NodeRenderState.isWired(portId)` over it. A host that draws an editor for a
-  value a wire could also supply had no way to ask: the body had to show the
-  editor unconditionally and hope the reader understood that the wire wins.
-  Everything else a body is handed is a fact about the node, and connectivity
-  is not, which is why it was missing rather than overlooked.
-
-  It is free, and that is the part worth stating. The connectivity map the port
-  painter already builds is memoised on the connection map's identity and hands
-  back the *previous* set wherever a node's wiring did not actually change, so
-  `_NodeSlot` can compare it with `identical` alongside everything else it
-  compares: drawing one wire rebuilds the two node bodies it lands on and
-  nothing else, and dragging a wired node still rebuilds exactly one body per
-  frame — the case the map is keyed on the connection map rather than on the
-  revision for. `test/rebuild_isolation_test.dart` pins all three:
-  *wiring two nodes rebuilds those two and nobody else*, *unwiring says so, and
-  again only at the two ends*, and *dragging a wired node rebuilds only that
-  node*.
-
-### Every node carries metadata of its own
-
-- `GraphNode.metadata` (`Map<String, Object?>`, `const {}`) — annotations a
-  host's *user* attaches to a node, beside `data` rather than in it. `data` is
-  what a prototype declares and resolution keeps in step, and `seedAndPrune`
-  drops a key a dynamic family stopped declaring, so a host that kept somebody's
-  notes there was keeping them somewhere a prototype could take them away. The
-  editor never reads the new map; the host decides what it is for. It nests as
-  deep as the host likes and is encoded through the same path as `data`, so a
-  value the codec cannot spell is refused the same way.
-
-  `copyWith(metadata:)` replaces it, and `NodeEditorController.setNodeMetadata(id, map)`
-  is the one mutator: through `_mutate`, so a guard sees it, `onEdit` reports
-  it as `updateNodes`, one `Ctrl+Z` puts the old map back, and an equal map is
-  not an edit at all — a dialog closed with the rows it opened with leaves the
-  history and the dirty flag alone. Prototypes are not re-resolved, because
-  nothing a prototype answers reads it. There is no `withMetadata`, on purpose:
-  `withData` *merges*, and a verb of the same shape that replaced would read as
-  the same thing doing the opposite.
-
-  On disk it is a `metadata` key on the node, written only when non-empty and
-  read absent as empty — the third thing after `meta` and `groups` to follow
-  that rule, and the same bargain `minHeight` made: a document from before the
-  key reads back identical, `NodeGraphCodec.version` stays at 1, and an
-  **older build of this package re-saving a document drops the key** rather
-  than refusing the file. That is a loss the host should know about; every
-  wire, port and field survives it. A key an author literally named `$type`
-  is wrapped as a tagged map on the way out and unwrapped on the way in.
-
-  `serialization_test.dart` *every optional field survives*, *a node with no
-  metadata writes no key*, *a document written before metadata existed reads
-  as empty* and *a metadata key called `$type` round-trips*;
-  `controller_test.dart` *setNodeMetadata is one undo step* and *a metadata
-  edit does not enter the resolver*; `graph_edit_test.dart` *writing metadata
-  on one is an update to it* and *a frozen canvas refuses metadata too*;
-  `model_test.dart` *a resize keeps it*; `rebuild_isolation_test.dart`
-  *writing metadata on one node rebuilds only that node*.
+- **A node body is told which of its ports are wired.**
+  `NodeRenderState.connectedPorts` (`Set<String>`, `const {}`) and
+  `isWired(portId)`, so a body can show an editor for a value only while no
+  wire supplies it. Drawing a wire rebuilds the two bodies it touches and no
+  others.
+- **Every node carries metadata of its own.** `GraphNode.metadata`
+  (`Map<String, Object?>`, `const {}`), beside `data` rather than in it, so a
+  prototype's pruning of `data` cannot take a user's notes away.
+  `copyWith(metadata:)`, `NodeEditorController.setNodeMetadata(id, map)`
+  (reported as `updateNodes`; an equal map is not an edit). Written to the
+  document only when non-empty, without a format version bump.
 
 ## 0.3.0
 
-The first release since 0.1.0. The package carried `0.2.0` while these landed
-and stamped it into every document a host wrote — `"package": "fl_nodes_v2/0.2.0"`
-is a graph saved by such a build — but 0.2.0 was never published.
+The first release since 0.1.0. `0.2.0` was never published; documents stamped
+`fl_nodes_v2/0.2.0` were written by an unreleased build in between.
 
 ### Watching a run
 
-A listener on the runner that is told everything a run does as it does it,
-and a way for an executor to say something into the same stream. `GraphRun`
-already reported afterwards what a run did; a debugger needs to know while it
-is happening, and what was on the wires. The package emits and keeps no log —
-which lines a trace is made of, and where it goes, is the host's decision, as
-the arrangement of a graph is under `applyLayout`.
+- `NodeEditorRunner.onEvent` (`GraphRunListener?`, null) is handed a
+  `GraphRunEvent` for every step of a run — `RunStarted`, `NodeStarted`,
+  `NodeFinished`, `MemoHit`, `DiagnosticRaised`, `LogEmitted`, `RunFinished`
+  — a sealed hierarchy, fired synchronously before the notification that
+  follows. A listener that throws is reported and the run goes on.
+- `NodeEditorRunner.tracePayloads` (`bool`, false) decides whether a
+  `GraphTraceValue` carries the value on the wire; off, it is a
+  `WithheldPayload` that still names the ports and the `dataType` tag. A wire
+  nothing was written on is `AbsentPayload`.
+- `NodeExecutionContext.log(message, {level, data})` lands on `GraphRun.log`
+  and reaches the listener as `LogEmitted`.
+- `GraphRun.id` climbs per run; every event carries it, its `sequence` and
+  `at`. `GraphRunRecorder` is a list-backed listener for tests and demos.
 
-- `NodeEditorRunner.onEvent` (`GraphRunListener?`, null) — handed a
-  `GraphRunEvent` for every step of every run: `RunStarted`, `NodeStarted`,
-  `NodeFinished`, `MemoHit`, `DiagnosticRaised`, `LogEmitted`, `RunFinished`.
-  A sealed hierarchy, so a host's `switch` is exhaustive. Synchronous, and
-  fired before the notification that follows it. A listener that throws is
-  reported through `FlutterError.reportError` and the run goes on.
-- `NodeEditorRunner.tracePayloads` (`bool`, false) — whether a
-  `GraphTraceValue` carries the value on the wire. Off, a value is
-  `WithheldPayload` and the event still says which ports and which `dataType`
-  tag; a wire nothing was written on is `AbsentPayload`, distinct from a
-  `PresentPayload` holding null. Off by default because a value on a wire was
-  produced by a node body the host did not write, and a trace is the thing
-  that gets written to a file.
-- `NodeExecutionContext.log(message, {level, data})` — lands on
-  `GraphRun.log` (`List<GraphLogEntry>`) and reaches the listener as
-  `LogEmitted`, with the node id and turn filled in. Not gated by
-  `tracePayloads`: what an executor logs is its author's choice. Throws after
-  the turn is over, like `emit`.
-- `GraphRun.id` (`int`) — climbs by one per run of a runner; every event of the
-  run carries it, and every event carries its `sequence` within the run and
-  `at`, read from the run's own stopwatch.
-- `GraphRunRecorder` — a list and a `call`, for `runner.onEvent =
-  recorder.call`. A fixture, not a sink.
+### Documents
 
-Nothing in an event is derived from a Dart type; `dataType` is the port's tag,
-which survives obfuscation where `runtimeType` does not. The example prints a
-line per event and reports how many it traced. The `watching a run` group in
-`runner_test.dart` pins the order, the three payload states, the memo hit, the
-cancelled turn, the reported listener and the run numbering.
+- `NodeGraphCodec.schemaVersion` (`int?`, null) and `schemaMigrations`
+  (`Map<int, GraphDocumentMigration>`, empty) — the host's own version axis
+  for what a node's `type` and `data` mean, stamped as `schema` and gated
+  the way `version` is. A missing `schema` reads as 1; a null `schemaVersion`
+  carries the key through untouched.
+- `GraphDocumentMigrations.upgrade` gains `label` and `key`, so a gap in
+  either chain names its axis.
 
-### The host's own format version
+### Nodes
 
-`NodeGraphCodec.schemaVersion` (`int?`, null) and `NodeGraphCodec.schemaMigrations`
-(`Map<int, GraphDocumentMigration>`, empty), stamped into a document as
-`schema` and reported on `GraphDocument.schemaVersion`.
+- **A node's corner can be dragged** when its prototype says
+  `NodePrototype.resizable` (`bool`, false), within `minWidth`, `maxWidth`
+  and `maxHeight`. The height set this way is a floor, `GraphNode.minHeight`
+  (`double?`, null), written to the document once set; ports stay on their
+  rows (`NodeEditorLayout.anchorSizeOf`). One undo step per drag.
+- `NodeEditorController.applyLayout(GraphLayout, {recordHistory})` places a
+  whole arrangement in one edit, ignoring `draggable`; returns whether
+  anything moved. `NodeEditorLayout.onMeasured` (`VoidCallback?`, null)
+  fires once when every node has been measured.
+- `NodeEditorController.guard` (`GraphEditGuard?`, null) can refuse an edit
+  before it lands; `onEdit` (`GraphEditListener?`, null) is told what landed,
+  as a `GraphEdit` with a `GraphEditKind` and the ids it touched. Undo and
+  redo pass through neither.
+- `NodeEditorController.emphasis` — a focus: a `GraphEmphasis` of nodes and
+  connections that stand clear of a scrim washed over everything else,
+  outside the document and the undo history. `NodeEditorTheme.scrimColor`
+  (null, derived from `background`), `scrimOpacity` (0.62), `emphasisInset`
+  (7), `emphasisRadius` (`Radius.circular(14)`).
+- `ConnectionLabel.maxWidth` (160) is public, so a layout can leave room for
+  a caption.
 
-A document already carried `version`, and it governs the envelope: nodes,
-connections, groups, ports — the shape this package owns. It could never govern
-what a *host* means by a node's `type` or by the keys in its `data`, because
-the package carries both and interprets neither. So a host that renamed a field
-had no version to bump and no chain to hang a migration on: `upgrade` ran
-`from` to `target` with `target` always `NodeGraphCodec.version`, which made a
-host-supplied `migrations` chain unreachable rather than merely unused. The
-predecessor had two axes and this is the second one back.
+### Menus
 
-The two move on different clocks, which is the whole point of their being two.
-Both gates run on the way in and the format's runs first — its migration
-normalises the envelope the host's then walks — and `decode` refuses a
-`schema` from the future the way it already refused a `version`, saying
-*schema* rather than *format* so nobody goes looking on the wrong side of the
-boundary. A missing `schema` reads as `legacySchemaVersion` (1): every document
-written before a host declared an axis, which is all of them the first time it
-does. Leaving `schemaVersion` null keeps the old behaviour exactly — a `schema`
-key is then read, reported and written back untouched rather than gated, since
-a build with no opinion about the host's data has no business refusing a
-document over it.
-
-`GraphDocumentMigrations.upgrade` gains `label` ('format') and `key`
-('version') so a gap in either chain names its own axis. Pinned by the `schema
-versions` group in `test/serialization_test.dart`, including that a document
-out of range on both axes reports the format one.
-
-
-### A node's corner can be dragged
-
-`NodePrototype.resizable` (`bool`, false), `minWidth` (`double?`, falls back
-to `defaultWidth`, then `GraphNode.defaultWidth`), `maxWidth` and
-`maxHeight` (`double?`, no limit); `GraphNode.minHeight` (`double?`, null),
-written to the document as `minHeight` only once set. A prototype that opts
-in gets the minimap's grip in its bottom-right corner — `CornerGrip`, one
-drawing for both so a person who has found one knows the other, shown
-while the node is hovered or selected. A press there resizes instead of
-moving: both axes, snapped to `snapToGrid` like a position, clamped, and
-committed as **one** undo step.
-
-The width is the node's own. The height is a **floor**: what `resolveHeight`
-or the content says is the least the node can be, the corner only adds room
-below it, and dragged back to the natural height the floor is cleared rather
-than left as a number that happens to equal it — so a card that later loses
-a row is free to shrink. The box grows; the ports do not move. Every
-explicit anchor is a fraction of the *declared* height rather than of the
-box (`NodeEditorLayout.anchorSizeOf`, beside `sizeOf`), so a wire lands on
-the same row of a card however tall the card has been made. A measured node
-is laid out to its floor instead, so for it the two agree. A prototype that
-would rather use the room than leave it blank reads the floor in
-`resolveHeight` and answers with a height laid out to it.
-
-Off by default and per prototype rather than per node, because a host whose
-cards are laid out to one width has to decide that a wider card is still a
-right one before the editor offers it.
-
-The grip takes no gesture of its own. The node's one pan recogniser decides
-what a press meant from where it landed — a second recogniser on the corner
-would contest the arena with the one underneath, and which of two pans wins
-a press is a rule nobody should have to remember. A `MouseRegion` on the
-corner is only for the cursor. `node_resize_test.dart` pins the drag on
-each axis, the floor, the anchors, the undo, the clamp, the snap, the
-opt-in, the cursor and the document.
-
-### The minimap's buttons sit against the edge
-
-The gear and the fold button in the minimap's bar floated a third of the way
-in from the right edge, at a distance that changed with the panel's width.
-The title was a `Flexible` beside a `Spacer`, and the two split the free
-width between them: the half the title did not fill sat as a gap *before*
-the spacer. The title is an `Expanded` now and the spacer is gone, and the
-trailing inset matches the grip's 6 on the left. On a 320-wide panel the
-gap was 46.75 px; `minimap_test.dart` pins it under 8 and equal to the
-grip's.
-
-### A submenu that slides instead of flipping
-
-`NodeSubmenuButton`, used by `buildMenuChildren` for every `NodeMenuEntry`
-with children in place of Material's `SubmenuButton`. Material lays a
-submenu out with the delegate a menu bar uses: a panel that would run off
-the bottom of the window is moved to end at the *top* of its row whenever it
-fits there. For a cascade opened at a click point that leaves the panel
-entirely above the row that opened it, and the pointer's path up to it
-crosses the sibling rows — each of which takes focus on hover and closes the
-open child. Near the bottom of the window the three-level Create menu was
-unreachable by mouse.
-
-The row is still a `MenuItemButton`, the linkage is `RawMenuAnchor`'s own —
-a click elsewhere, Escape and choosing an entry still close the whole tree —
-and the panel is dressed from `MenuTheme`. What is ours is the placement: to
-the right of the row, top-aligned with it, slid up only as far as the window
-demands and never off the row's band, flipped to the left only when there is
-no room to the right. It opens on the *focus a hover brings* rather than on
-the hover itself, because `MenuItemButton` reports the hover before it takes
-focus and taking focus is what closes the previous row's children — which,
-opened a moment earlier, would include this panel. Right on a row walks in,
-left inside a panel walks out to the row, and a row nested in a panel hands
-left up to that panel rather than walking focus sideways.
-`submenu_placement_test.dart` pins the placement, the hover crossing, the
-sibling close, the arrows and the two ways the tree closes.
-
-**And the whole cascade opens one way.** `CascadeSide`, decided once by
-`NodeEditorMenuHostState` when the menu opens and read by every panel under
-it. Each panel deciding for itself — right when it fits, left when it does
-not — had the third level flip to the left of the second when it was the
-wider one, so a cascade zig-zagged across the screen and its deepest panel
-landed over the root. The side is chosen from the **widest chain** of
-panels the tree could open, estimated from the labels with the menu's own
-text style (`estimateCascadeWidth`, erring wide) since a panel is not laid
-out until it opens; a panel that cannot fit on the side it was told still
-goes to the other, so nothing ever leaves the screen. Pinned by the cascade
-cases in the same test.
-
-### The wire stays while the Create menu is up
-
-With `NodeEditorMenus.createOnDrop` on, the pending wire was cleared the
-moment the Create menu opened at the drop point, so the person saw their wire
-vanish and a menu appear — which read as the drop having failed, not as the
-next step of it. `_handlePortDragEnd` now keeps the `PendingConnection` drawn,
-frozen where it was let go, until the menu closes: chosen, dismissed or
-clicked away. Only the drag ends at the drop — the source and target are
-cleared — so a pointer over the menu cannot go on steering a wire nobody is
-holding. `NodeEditorMenuHostState.open` returns whether a menu actually
-opened, which is the cue. `drop_to_create_test.dart` pins both the holding and
-the letting go.
-
-### How wide a caption can get
-
-`ConnectionLabel.maxWidth` (160) was private and is not any more. A host that
-arranges its own graph cannot get the number any other way and needs it: a
-caption is drawn at the midpoint of a curve, so the gap a layout leaves between
-two ranks has to be at least this wide or every caption lands on a node. It is
-a hard cap — the text is one line and ellipsised — so a layout can be derived
-from it rather than tuned by eye.
-
-The same argument `applyLayout` and `onMeasured` already make: the algorithm
-stays out of the package, and the measurements it cannot take for itself come
-out.
-
-### Pointing at part of a graph
-
-`NodeEditorController.emphasis` (`NodeEditorEmphasis`, empty) — a **focus**: a
-set of nodes and connections that stand clear while everything else is washed
-under a scrim. It is what a host needs to answer a question *about* a graph —
-every route between these two nodes, everything this value reaches — without
-editing the graph to say so.
-
-- `GraphEmphasis` (`nodes`, `connections`, `scrim`) — a value type. Membership
-  lifts; the value tints. A null tint lifts a node without painting a halo
-  behind it, and lifts a wire without overriding its colour.
-- `emphasis.value = …` replaces the focus wholesale, `clear()` drops it, and an
-  equal value is a **no-op** — a host that recomputes the same answer every
-  tick costs no repaint.
-- `emphasis.revision` is the O(1) invalidation key, exactly as
-  `selection.revision` is, and `emphasis.lifted` is a cached snapshot so paint
-  order and hover picking do not allocate.
-- `NodeEditorTheme` gains `scrimColor` (null), `scrimOpacity` (0.62),
-  `emphasisInset` (7) and `emphasisRadius` (`Radius.circular(14)`). A null
-  `scrimColor` derives from `background`, so a focus dims *towards the canvas*
-  in either brightness rather than towards black in one of them.
-
-**`nodes` and `connections` are two maps rather than one**, and that is the
-shape the first consumer actually needed: a run of flow that passes through a
-node the host does not want to show is expressed by tinting the wires either
-side of it and leaving the node out, so the coloured run reads as continuous
-across a card that is still dimmed.
-
-**It lives on the controller and not on the `NodeEditor` widget**, for a reason
-that only shows up once it is wrong. `NodeEditorLayout.nodeAt` and
-`nodesInPaintOrder` rank through one function, and a widget-level input could
-have reordered what is *drawn* without reordering what a press *lands on* —
-which is the drift the layout's own doc comment already warns about. Putting it
-on the controller also means the editor's existing listener does the repaint,
-so a host never has to rebuild `NodeEditor` to show a focus, which is the one
-thing this package asks a host not to do.
-
-**A focus wins outright over the selection.** While anything is lifted, the
-selection is ignored for paint order: a selected node floating above the scrim
-is precisely what the scrim promises will not happen, and a union of the two
-would let one stray click undo the whole effect.
-
-It is **not** in the document, **not** in the undo history, and **never
-reaches** `guard` or `onEdit` — assigning a focus is not an edit, for the same
-reason a selection is not one. It is pruned after every mutation *and* after
-undo and redo, because a focus is not in the graph and nothing else would drop
-a halo painted around a node that has gone.
-
-Two details worth knowing before touching the rendering:
-
-- **The lifted wires are redrawn above the scrim rather than recoloured in
-  place.** `ConnectionsPainter` draws every curve below the whole node layer,
-  so a forced colour applied there would be washed out by the scrim. The new
-  `EmphasisPainter` sits inside the node layer's own stack, immediately below
-  the first lifted card, and re-strokes them from `ConnectionLayout`'s cache —
-  already warm, so nothing is computed twice. `arrowheadsPath` and
-  `arrowheadSize` moved out of `ConnectionsPainter` so both painters draw the
-  same triangle.
-- **A handle under the scrim is neither drawn nor grabbable.** `PortsPainter`
-  paints above the whole node layer, so a dimmed card would otherwise keep a
-  row of bright dots floating over the wash; `NodeEditorLayout.portAt` skips
-  the same nodes, because one condition has to gate drawing and hitting alike —
-  the rule `portMinScale` already follows.
-
-The halo is painted **behind** the card, which is what makes this a
-package-level feature at all: a host's node widget is opaque and untouched,
-`NodeRenderState` gains nothing, and `_NodeSlot`'s comparison is unchanged, so
-none of the rebuild isolation is at risk. There is a test that showing a focus
-builds no node body at all.
-
-Connection captions are **not** redrawn above the scrim; they stay under it,
-which is why the default scrim is 0.62 rather than opaque. A focus that erased
-its surroundings would answer "which routes are these" by throwing away the
-board they run across.
-
-Pinned by `test/emphasis_test.dart`, including the two that state the rules
-above: a selected-but-unlifted node does not rise, and `portAt` answers null
-for a node under the scrim.
-
-### Somewhere to hang an automatic layout
-
-The package still ships no arrangement of its own and is not going to: which
-picture a graph should make is a question about what the nodes *mean*, and only
-the host knows that. What a host cannot get for itself is the two ends of the
-job, and both are here now.
-
-- `NodeEditorController.applyLayout` (`GraphLayout`, `recordHistory: true`) —
-  hands an algorithm the graph and the measured size of every node, and places
-  whatever it answers in **one** edit, so a re-layout is a single undo step and
-  a single repaint rather than one per node. Nodes the layout does not name are
-  left alone, so arranging a selection is just a smaller map. Returns whether
-  anything moved — false when the layout named nobody, named only nodes already
-  in place, or when `guard` refused.
-- `NodeEditorLayout.onMeasured` (`VoidCallback?`, null) — fired the moment
-  `hasUnmeasuredNodes` goes false.
-
-**`applyLayout` ignores `draggable` where `moveNodes` honours it**, and that is
-the point of it rather than an inconsistency: the flag says whether a *pointer*
-may push a node about, which is a different question from whether an
-arrangement may place one — and a read-only canvas, where nothing is draggable,
-is exactly where an automatic layout is most wanted. `moveNodes` is still the
-gesture path and still refuses.
-
-`onMeasured` exists because `hasUnmeasuredNodes` was only half a sentence. It
-already told a caller to wait; nothing told it the wait was over. The
-controller's own notifications cannot say so — they fire for every edit and
-every measurement, so a host watching them re-asks on each one and has to
-remember the previous answer. This fires once, on the transition, which is
-where a layout that depends on real extents wants to run. A graph whose nodes
-all declare a height never has anything to wait for and never fires it.
-
-Pinned by `test/graph_layout_test.dart`, including the two that state the
-difference: an arrangement places a `draggable: false` node, and `moveNodes`
-still refuses the same one.
-
-### Telling the host what changed, and letting it say no
-
-Two hooks on `NodeEditorController`, both null by default so nothing changes
-for a host that ignores them:
-
-- `guard` (`GraphEditGuard?`, null) — asked before every edit; returning false
-  abandons it, leaving the graph untouched, no undo step recorded and `onEdit`
-  unfired. Consulted at the very top of `_mutate`, before prototypes are
-  resolved, so a refused edit costs nothing rather than resolving against a
-  graph that is then thrown away.
-- `onEdit` (`GraphEditListener?`, null) — told after every edit that landed.
-  `ChangeNotifier` already says *that* the graph changed; this says **what**,
-  which is the difference between a host diffing two graphs and reading one
-  field.
-
-Both take a `GraphEdit`: a `GraphEditKind` plus the node, connection and group
-ids it touched. The kinds are deliberately coarse — `addNodes`, `updateNodes`,
-`removeNodes`, `moveNodes`, `connect`, `disconnect`, `labelConnection`,
-`group`, `comment`, `replace` — because a host wants to know whether something
-*went away*, not to carry a case per controller method.
-
-`guard` is **synchronous**, and that is the contract rather than a limitation:
-an edit is a frame's work and the controller cannot hold a graph half-changed
-while a dialog is open. A host that needs to ask a question refuses, asks, and
-re-issues the edit once it has an answer. `graph_edit_test.dart` pins that
-round trip.
-
-**Undo and redo do not pass through either hook.** They restore a graph the
-hooks already saw on the way in, and a host that had refused a delete would
-otherwise be unable to redo one it had allowed — so `history.undo()` bypasses
-`_mutate` entirely and the test says so. A host that must catch every way a
-node can leave the graph listens as well as guarding.
-
-`graph_edit_test.dart` covers all sixteen cases; the existing 400 tests are
-unchanged.
+- Submenus are `NodeSubmenuButton`: a cascade opens to the right of its row,
+  slides up only as far as the window demands, and never flips above the
+  row it opened from. The whole tree opens one way, `CascadeSide`, chosen
+  from its widest chain.
+- With `createOnDrop` on, the wire stays drawn while the Create menu is up
+  and goes when the menu closes.
+- The minimap's gear and fold buttons sit against the panel's edge.
 
 ## 0.1.0
 
-First release. A node graph editor for Flutter, and the spiritual successor to
-[fl_nodes](https://github.com/WilliamKarolDiCioccio/fl_nodes) — same ideas,
-rebuilt around one change of approach.
-
-fl_nodes isolated rebuilds with a `MultiChildRenderObject`. It worked, but it
-fought the framework: native channel synchronisation broke, which made text
-fields inside nodes impossible and put a ceiling on what a node body could be.
-The same isolation turns out to be available one layer up, at the *element*
-level — `Element.updateChild` short-circuits when handed the identical widget
-instance, so a per-node widget slot skips the subtree without building it.
-Node bodies stay ordinary widgets. Text fields, sliders, popup menus and forms
-all work inside a node.
-
-### The graph
+First release: a node graph editor for Flutter, the successor to
+[fl_nodes](https://github.com/WilliamKarolDiCioccio/fl_nodes), rebuilt so
+that a node body is an ordinary widget — text fields, sliders and forms all
+work inside one.
 
 - Immutable `NodeGraph` of `GraphNode`s, `NodePort`s and `NodeConnection`s,
-  edited copy-on-write through a `NodeEditorController`.
-- Ports declare a `PortKind` (`data` or `control`) and an optional `dataType`;
-  the default validator refuses to wire across either.
-- Subsystems on the controller, each a `part` of it: `history`, `selection`,
-  `camera`, `layout`, `clipboard`, `project`, `runner`.
-
-### Prototypes
-
-A prototype is a reduction rule, not a template stamped out once. Given what a
-node's fields say and how it is wired right now, it returns the ports, fields
-and height that node should have, and resolution rewrites the node to match.
-
-- Ports become derived state: one input per placeholder in a format string, one
-  more exit each time the last free one is wired.
-- Static and dynamic families, with foreign ports left alone so a prototype can
-  be pointed at a document whose ports were authored by hand.
-- Presentation lives here too — `label`, `icon`, `category`, `description`,
-  `defaultWidth` — which is what the editor's own menus read.
-
-### Execution
-
-- `controller.runner.run()` walks control flow depth-first and pulls data
-  inputs on demand, memoised per run against a monotonic stamp.
-- Control flow is a pulse: two branches converging on a node run it twice.
-- `NodeExecutionContext.enteredVia` (null) names the control input the flow
-  arrived on, so a node with more than one can behave differently on each. Some
-  cannot be written without it — a loop's `continue` and `break` are one node
-  doing opposite things, and the runner previously pushed only the destination
-  node id and dropped the port. Null means nothing flowed in: the node was a
-  root of the run, or it was pulled because something wanted its value. Pinned
-  by `runner_test.dart`'s "a node is told which control input the flow arrived
-  on" and "a root and a pulled node arrived through nothing".
-- Runtime values live in a run-scoped map. Execution never touches the
-  document, never bumps `revision` and never marks the project dirty.
-- Returns a `GraphRun` — trace, values, diagnostics, failure — rather than
-  throwing out of an async subsystem.
-
-### Interaction
-
+  edited through a `NodeEditorController` with `history`, `selection`,
+  `camera`, `layout`, `clipboard`, `project` and `runner` subsystems.
+- Ports declare a `PortKind` (`data` or `control`) and an optional
+  `dataType`; the default validator refuses to wire across either.
+- Prototypes as reduction rules: given a node's fields and wiring, they
+  return the ports, fields and height it should have. Static and dynamic
+  port families; foreign ports left alone.
+- Execution: `controller.runner.run()` walks control flow depth-first and
+  pulls data inputs on demand, memoised per run; `NodeExecutionContext.enteredVia`
+  names the control input the flow arrived on; a `GraphRun` carries the
+  trace, values, diagnostics and failure.
 - Pan, zoom, marquee select, node drag, port-to-port wiring, connection
-  captions, keyboard shortcuts and undo.
-- Context menus on node, port, wire and canvas, built from `MenuAnchor` so they
-  inherit the app's `MenuTheme`. Entries are data, and a build hook hands hosts
-  the defaults to filter rather than a blank sheet.
-- The secondary button never drives a drag — it opens menus and nothing else.
-- A tap on the canvas takes focus, so selecting a wire and pressing Delete
-  removes it. A tap is not a drag, so the scale recogniser never starts, and
-  nothing else on that path claimed focus — which mattered more than a shortcut
-  going unheard: the key event went to whatever the *host* had focused instead,
-  and an editor embedded beside a file tree could answer Delete by deleting a
-  file. Pinned by `test/canvas_focus_test.dart`.
-- Optional drop-to-create: a wire let go on empty canvas offers the Create menu
-  there and wires up what it makes, in one undo step.
-- Comments, as free-standing notes sharing the nodes' paint order.
-- Groups, as named frames behind a set of nodes, made with `Ctrl+G`.
-
-### Comments
-
-- `controller.addComment` leaves a note on the canvas: a real text field in a
-  grey slab, with a ring of padding wide enough to grab it by.
-- A note is an ordinary `GraphNode` of a reserved type rather than a model of
-  its own, so paint order, selection, dragging, the marquee, cut and paste,
-  undo and the document format all apply to it unchanged, with no cases for it
-  anywhere. `NodeComment` reads one; `graph.comments` and `graph.contentNodes`
-  partition `graph.nodes` for the places that care.
-- The editor draws them itself and never hands one to the host's `nodeBuilder`.
-  They are deliberately unthemed and identical in a light app and a dark one: a
-  note is the app user's own annotation, not part of the graph's visual
-  language.
-- Typing folds into one undo step per run — `setCommentText` records only the
-  first change, and `endCommentEdit` or any other edit closes the run, so undo
-  can never step back past something that happened while the caret was
-  elsewhere.
-
-### Groups
-
-- `Ctrl+G` frames the selected nodes; pressing it again with the frame and
-  further nodes selected widens it. `controller.groupSelection` returns null
-  rather than guessing when the selection cannot be framed — nothing selected,
-  two frames in it, or a node that already belongs to a different one. Moving a
-  node between groups is deliberately not offered: one keystroke would
-  otherwise rewrite a group the user was not looking at.
-- A `NodeGroup` owns no geometry. Its frame is its members' bounding box plus
-  `NodeGroup.padding`, derived every time, which is why this is its own model
-  where a comment is a node. Membership is explicit and exclusive; a group is
-  pruned when its last member goes.
-- The frame paints immediately below the lowest of its own members and no
-  lower, and takes no pointer events: the space inside one is still canvas.
-  Everything a group does goes through its handle — drag to move every member
-  in one step, double-click to rename, a fixed palette in the dropdown, and a
-  context menu carrying `Disband` beside `Delete with contents`.
-- `selection.groupIds` sits beside `nodeIds` and `connectionIds`;
-  `selection.nodeIdsWithGroups` is what acting on the selection means once a
-  frame can be in it.
-- **A selected group floats to the front, its members with it.** Paint order
-  ranks a node through `nodeIdsWithGroups` rather than through the selection
-  alone, so picking a frame up lifts everything in it over whatever it was
-  under — and the frame follows, being bucketed beneath its lowest-ranked
-  member. Without it a group dragged across other nodes vanishes underneath
-  them and has to be moved somewhere else before you can reach what it is now
-  covering. `NodeEditorLayout.nodeAt` ranks the same way, or what is drawn on
-  top is not what a click lands on. Pinned by `group_test.dart`'s "selecting a
-  group floats it and its members to the front" and "dragging the handle brings
-  the group forward"; "an unselected group outranks nothing" is the guard that
-  keeps a frame from sitting over the node you just clicked.
-
-### Minimap
-
-- **`NodeEditor.minimap`** (null) draws a minimap panel over the canvas, as the
-  last child of the editor's own `Stack` rather than something a host positions
-  itself: it has to paint above the node layer and take presses the marquee
-  must never see, and a host solving that twice would solve it differently the
-  second time. Off by default, unlike `contextMenus` — a right-click already
-  means a menu, where a panel sitting over the canvas is a thing you ask for.
-  `minimap: const MinimapConfig()` is the whole opt-in. Pinned by
-  `minimap_test.dart`'s "there is no panel unless the host asks for one".
-- **It is a readout and nothing else.** No click-to-jump and no drag-to-pan:
-  the drag belongs to the *panel*, so it can be moved off whatever you are
-  working on, and a panel you cannot move is a panel sitting on top of your
-  graph. That is also what makes it free — it never calls
-  `NodeEditorController`, so it can never bump `revision`, and dragging,
-  resizing or folding it rebuilds no node body at all. Pinned by
-  `rebuild_isolation_test.dart`'s "dragging the panel rebuilds no node bodies
-  at all" and the three numbers of the isolation table re-run with it drawn.
-- **`MinimapController`** (`size` 240x160, `maxScale` 0.2, `idleOpacity` 0.28)
-  holds everything the app user can change, so a host can persist the placement
-  into its own document; the editor makes one when given none and disposes only
-  the one it made. The defaults live there rather than on `MinimapConfig`
-  because two homes for one default is how a setting somebody restored gets
-  silently overwritten by a config seed on the next launch.
-- The map fits the whole document, **capped** by
-  `MinimapController.maxScale` — without it three nodes fitted to the panel render as three enormous
-  slabs and the map says nothing about shape. The cap can only ever bind
-  *downward*: fitting takes the smaller of the two, so capping leaves slack on
-  both axes and can never push content off the map. There is deliberately no
-  matching floor, since a five-thousand-node graph legitimately needs 0.001.
-  Pinned by "the zoom cap stops a small graph filling the map" and "the cap can
-  never push content off the map".
-- Everything outside the viewport is washed over with **four rects rather than
-  a difference path**. The wash is translucent, so bands that overlap
-  composite twice and show as a darker cross through the panel; `minimapShadeBands`
-  slices the complement so it is covered exactly once, with no `Path` allocated
-  on a repaint that happens on every scroll tick. Pinned by "the bands tile the
-  map around the viewport and never overlap".
-- A node takes its **group's** colour, a note the note grey, a selected node the
-  theme's selection colour, and a host may override the lot with
-  `MinimapConfig.nodeColor` — the package has no per-node colour by design, so
-  that callback is the same seam `nodeBuilder` is. Selection outranks the host:
-  otherwise a selected node is indistinguishable from an unselected one of the
-  same type, on the one panel whose job is telling you where you are. Pinned by
-  "the selection outranks the host, which outranks the group".
-- The **close button minimises rather than closing**, folding the panel to its
-  action bar; the same button restores it. With the minimap opt-in there is
-  nothing else that would bring it back. Pinned by "the close button minimises
-  rather than closing".
-- `MinimapPainter` is the only painter in the package taking a `repaint`
-  listenable, because it is the only one that can: every input it reads is on a
-  `ChangeNotifier`, where the four canvas painters depend on editor state only
-  a rebuild can deliver. Together with the panel's cached widget instance, a
-  scroll tick repaints one layer and rebuilds no widget. Pinned by "the panel
-  widget survives a pan".
-- Scrolling, trackpad panning and hovering **over** the panel no longer reach
-  the canvas underneath. An opaque `MouseRegion` stops siblings, not ancestors,
-  and the editor's pointer plumbing is entirely ancestral — so the guard is on
-  the editor rather than on the panel. Pinned by "scrolling over the panel does
-  not zoom the canvas" and "hovering the panel does not pick a port beneath it".
-
-### Rendering
-
-- Connections, ports, grid and overlays are painted, not built. Level of detail
-  is then a condition inside a painter rather than widgets coming and going, so
-  crossing a threshold is a repaint instead of a rebuild storm.
-- Per-node widget slots, an incremental connection layout keyed on endpoint
-  identity, a spatial hash for hit testing and culling, and a fragment shader
-  for the grid with a CPU fallback.
-
-### Serialisation
-
-- `NodeGraphCodec` reads and writes a versioned JSON document; only what cannot
-  be derived is stored, so ports come back from the prototypes. A group naming
-  a node the document does not carry loses that member rather than failing the
-  load — a frame around four of five nodes is still a frame.
-- Pluggable payload codecs, map-to-map migrations, and a `project` subsystem
-  that keeps I/O behind a host-supplied source and sink.
+  captions, keyboard shortcuts and undo. Context menus on node, port, wire
+  and canvas, built from `MenuAnchor` with entries as data and a build hook.
+  Optional drop-to-create.
+- Comments: free-standing notes sharing the nodes' paint order, typed edits
+  folding into one undo step per run.
+- Groups: named frames behind a set of nodes (`Ctrl+G`), moved by their
+  handle, floating to the front with their members when selected.
+- Minimap: `NodeEditor.minimap` (`MinimapConfig?`, null) draws a movable,
+  foldable readout over the canvas; `MinimapController` holds its size,
+  `maxScale` (0.2) and `idleOpacity` (0.28) for a host to persist.
+- Rendering: connections, ports, grid and overlays painted rather than
+  built; per-node widget slots, an incremental connection layout, a spatial
+  hash for hit testing and culling, a fragment-shader grid with a CPU
+  fallback.
+- `NodeGraphCodec` reads and writes a versioned JSON document with
+  pluggable payload codecs and map-to-map migrations; a `project` subsystem
+  keeps I/O behind a host-supplied source and sink.

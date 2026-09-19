@@ -24,7 +24,7 @@ cd example && flutter run
 
 ```yaml
 dependencies:
-  fl_nodes_v2: ^0.3.0
+  fl_nodes_v2: ^0.4.0
 ```
 
 ```dart
@@ -72,7 +72,9 @@ NodeEditor(
 
 `nodeBuilder` is the extension point. It receives the node and a
 `NodeRenderState` (`isSelected`, `isHovered`, `isDragging`,
-`isConnectionTarget`) and returns any widget.
+`isConnectionTarget`, and `isWired(portId)` for whether a port has a wire on
+it, so a body can show an editor for a value only while nothing is supplying
+it) and returns any widget.
 
 > **One rule worth knowing up front.** Do not wrap `NodeEditor` in a
 > `ListenableBuilder` on its own controller. It already listens for itself, and
@@ -89,12 +91,15 @@ Four value types, all immutable:
 | | |
 | --- | --- |
 | `NodeGraph` | nodes and connections, edited copy-on-write |
-| `GraphNode` | `id`, `type`, `position`, `width`, optional `height`, `ports`, and a free-form `data` map |
+| `GraphNode` | `id`, `type`, `position`, `width`, optional `height`, `ports`, a free-form `data` map, and a `metadata` map beside it |
 | `NodePort` | `id`, direction, `kind`, optional `dataType`, `label`, `anchor`, `maxConnections` |
-| `NodeConnection` | a `PortRef` at each end, plus `type`, `label`, `color`, `data` |
+| `NodeConnection` | a `PortRef` at each end, plus `type`, `label`, `color`, `data`, and the `waypoints` it is routed through |
 
 `type` and `data` are yours. The package never interprets them; your
-`nodeBuilder` switches on `type` and reads `data`.
+`nodeBuilder` switches on `type` and reads `data`. `metadata` is for what your
+*user* attaches to a node — notes, tags — kept apart from `data` because a
+prototype shapes `data` and may prune a key it stopped declaring; the editor
+never reads it, and `controller.setNodeMetadata` is the one way to write it.
 
 ### The controller
 

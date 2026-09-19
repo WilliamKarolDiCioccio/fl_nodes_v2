@@ -49,10 +49,13 @@ Comments earn their place by saying *why*, especially where the obvious
 implementation is wrong. Doc comments on public API; a `///` on a field that
 just restates its name is noise.
 
-CHANGELOG entries state the change **and its rationale**, name the symbol in
-backticks with its default in parentheses, carry measured numbers wherever a
-performance claim is made, and close by naming the test that pins the new
-behaviour.
+The CHANGELOG is the **consumer's** summary, by version: what a host can do
+now, a line or two per change, the symbol in backticks with its default in
+parentheses. Not why, not what it replaced, not how it was built, and never
+the test that pins it — the reasons live in this file, beside the code, and a
+changelog that carried them grew to forty kilobytes nobody upgrading would
+read. Work in flight goes under `## Unreleased`; a version heading replaces it
+when the release is cut, and the cut also moves `_packageStamp`.
 
 ## The one architectural decision
 
