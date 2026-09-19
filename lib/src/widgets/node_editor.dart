@@ -601,12 +601,9 @@ class NodeEditorState extends State<NodeEditor>
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
     if (_canvasGesture == _CanvasGesture.blocked) return;
-    if (_canvasGesture == _CanvasGesture.port) {
+    if (_canvasGesture == _CanvasGesture.port ||
+        _canvasGesture == _CanvasGesture.waypoint) {
       _dragTo(details.localFocalPoint);
-      return;
-    }
-    if (_canvasGesture == _CanvasGesture.waypoint) {
-      _handleWaypointDragUpdate(_viewport.toScene(details.localFocalPoint));
       return;
     }
     if (_canvasGesture == _CanvasGesture.marquee) {
@@ -971,8 +968,9 @@ class NodeEditorState extends State<NodeEditor>
   void _handleNodeDragUpdate(Offset globalPosition) =>
       _dragTo(_toLocal(globalPosition));
 
-  /// Carries whichever drag is in progress — a wire or the selection — to
-  /// [localPosition], and notes where that is for the edge scroll.
+  /// Carries whichever drag is in progress — a wire, a handle or the
+  /// selection — to [localPosition], and notes where that is for the edge
+  /// scroll.
   ///
   /// One funnel for both, because both arrive here twice over: from the
   /// pointer moving, and from [_handleEdgeScrollTick] with a pointer that has
@@ -983,6 +981,8 @@ class NodeEditorState extends State<NodeEditor>
     final scene = _viewport.toScene(localPosition);
     if (_pendingSource != null) {
       _handlePortDragUpdate(scene);
+    } else if (_draggingWaypoint != null) {
+      _handleWaypointDragUpdate(scene);
     } else if (_nodeDragOrigin case final Offset origin) {
       final delta = scene - origin;
       _controller.moveNodes(<String, Offset>{
@@ -1035,6 +1035,7 @@ class NodeEditorState extends State<NodeEditor>
   }
 
   void _handleWaypointDragEnd() {
+    _stopEdgeScroll();
     if (_draggingWaypoint == null) return;
     _controller.history.commitTransaction();
     setState(() => _draggingWaypoint = null);
