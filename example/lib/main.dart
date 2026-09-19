@@ -88,6 +88,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
   /// it was left when the minimap is switched off and on again.
   final MinimapController _minimap = MinimapController();
   CanvasDragBehavior _dragBehavior = CanvasDragBehavior.marquee;
+  ConnectionStyle _linkStyle = ConnectionStyle.curved;
 
   @override
   void initState() {
@@ -184,7 +185,11 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     final base = widget.isDark
         ? NodeEditorTheme.dark()
         : NodeEditorTheme.light();
-    return base.copyWith(showGrid: _showGrid, snapToGrid: _snapToGrid ? 16 : 0);
+    return base.copyWith(
+      showGrid: _showGrid,
+      snapToGrid: _snapToGrid ? 16 : 0,
+      connectionStyle: _linkStyle,
+    );
   }
 
   /// Places a new node at the centre of the current view.
@@ -641,6 +646,16 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
               tooltip: 'Show the minimap',
               value: _showMinimap,
               onChanged: (value) => setState(() => _showMinimap = value),
+            ),
+            _Toggle(
+              icon: Icons.turn_right,
+              tooltip: 'Right-angled links',
+              value: _linkStyle == ConnectionStyle.orthogonal,
+              onChanged: (value) => setState(() {
+                _linkStyle = value
+                    ? ConnectionStyle.orthogonal
+                    : ConnectionStyle.curved;
+              }),
             ),
             _Toggle(
               icon: Icons.pan_tool_outlined,

@@ -257,6 +257,56 @@ that matters. The menu is the wire's with `waypoint`/`insertion` on
 `NodeMenuConnectionTarget` rather than a new target, so a host's `build` hook
 keeps matching what it matched.
 
+## Link styles
+
+`NodeEditorTheme.connectionStyle` picks `curved` or `orthogonal` for every wire
+at once, and the reason it is one painter with two routers rather than two
+painters is that the painter never builds a path: `ConnectionLayout` does,
+through `ConnectionPath.build`, and everything downstream — picking, arrows,
+the caption midpoint, the emphasis re-stroke, the waypoint handles — samples
+the `Path`. A style is a setting the layout bakes in, so it joins
+`_settingsHold` and a switch is one full rebuild and nothing after.
+
+The seam is `ConnectionSpan`: one per consecutive pair of `[from, …waypoints,
+to]`, a `CubicSegment` in one style and a `PolylineSpan` in the other, both
+knowing how to `appendTo` a path. `nearestOnRoute` walks spans and does not
+care which; a polyline is projected onto exactly, a cubic is sampled.
+
+**`OrthogonalRoute.legs` is templates, not a search.** Between two stub ends
+there are an L each way round, a Z each way round, and the Z again with its
+middle leg on a lane level with either end or a stub's clearance past it; the
+answer is the one with fewest corners, then shortest, then — at a waypoint —
+the one that sets off across the axis it arrived on, then a fixed order that
+puts the Z through the middle ahead of the L. One hard filter: no two
+consecutive legs anti-parallel, which is what rules out the routes that fold
+back over a stub. The clearance lanes exist for one case the others all fail:
+a target behind the source *on its own row*, where every level lane lies on
+the row the wire would fold on. `orthogonal_links_test.dart` sweeps every side
+pair over a grid of ends for that property.
+
+Three things that follow, each in place:
+
+- **Corners are rounded over the whole wire, not per span** — the corner at a
+  waypoint has one leg in each span. `PolylineSpan.appendTo` is therefore
+  sharp and only `nearestOnRoute` uses it; `build` gathers the corners and
+  hands them to `roundedPolyline`, whose radius shrinks on a leg too short
+  for it. A conic of weight `√2/2` is a true quarter circle.
+- **A waypoint is a corner**, so a handle dragged in this style snaps onto the
+  row or column of the point either side of it (`waypointAlignSnap`, screen
+  pixels, each axis on its own). Without it a corner one pixel off its
+  neighbour draws a one-pixel jog no care with the mouse removes. Curved
+  never snaps: a point on a curve has no row to be on.
+- **Arrows are squared to the nearer axis** (`arrowsAlong(axisAligned:)`): a
+  sample that lands on an arc would otherwise take the arc's slant, and a
+  head skewed forty degrees on a right-angled wire reads as a glitch.
+
+No obstacle avoidance, and it is a decision: a grid search costs a grid and a
+frame, and the waypoints are how a wire is taken round a card. That is also
+why `curved` stays the default — a bezier under a card reads as a swoop where
+a horizontal leg under one reads as a mistake. The pending wire in
+`OverlayPainter` takes the style too, or a drag would draw one shape and the
+drop another.
+
 ## Hooks a host can hang on
 
 `guard` and `onEdit` on the controller, both null by default. `_mutate` is the

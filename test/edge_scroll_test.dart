@@ -348,6 +348,33 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('a waypoint handle held against the edge scrolls too', (
+    tester,
+  ) async {
+    final controller = await boot(tester);
+    final id = controller.connect(
+      const PortRef('a', 'out'),
+      const PortRef('b', 'in'),
+    )!;
+    controller.setConnectionWaypoints(id, const <Offset>[Offset(400, 145)]);
+    await tester.pumpAndSettle();
+
+    final handle = screenPoint(tester, controller, const Offset(400, 145));
+    final gesture = await dragTo(tester, handle, nearRightEdge(tester, 10));
+    final before = controller.graph.connections[id]!.waypoints.single;
+    await hold(tester, 10);
+
+    expect(controller.camera.viewport.offset.dx, lessThan(0));
+    expect(
+      controller.graph.connections[id]!.waypoints.single.dx,
+      greaterThan(before.dx),
+      reason: 'the handle stays under a pointer the scene moved beneath',
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a group dragged by its handle scrolls too', (tester) async {
     final controller = await boot(tester);
     controller.selection.selectNodes(<String>['a']);

@@ -52,7 +52,15 @@ export 'src/controller/node_editor_controller.dart'
         NodeRunState;
 export 'src/collections/spatial_hash_grid.dart' show SpatialHashGrid;
 export 'src/geometry/connection_path.dart'
-    show ConnectionPath, CubicSegment, PathArrow, RoutePoint;
+    show
+        ConnectionPath,
+        ConnectionSpan,
+        ConnectionStyle,
+        CubicSegment,
+        PathArrow,
+        PolylineSpan,
+        RoutePoint;
+export 'src/geometry/orthogonal_route.dart' show OrthogonalRoute;
 export 'src/geometry/connection_router.dart'
     show ConnectionEndpoints, ConnectionRouter;
 export 'src/geometry/node_geometry.dart' show NodeGeometry;

@@ -5,55 +5,169 @@ import 'package:flutter/foundation.dart';
 
 import '../model/node_port.dart';
 import 'node_geometry.dart';
+import 'orthogonal_route.dart';
 
-/// Builds and probes the cubic beziers used for connections.
+/// How a wire is drawn between its two ports.
+///
+/// One choice for the whole canvas, on the theme: which is readable is a
+/// question about the graph and the reader, not about one wire. The
+/// waypoints mean the same thing under both — points the wire passes
+/// through — so switching moves no data.
+enum ConnectionStyle {
+  /// A cubic bezier leaving and arriving along the port normals; through
+  /// waypoints, a smooth run of them.
+  curved,
+
+  /// Axis-aligned legs with rounded corners; through waypoints, a corner at
+  /// each. No obstacle avoidance: the waypoints are how a wire is taken
+  /// around a card, and a horizontal leg under a card reads as a mistake
+  /// where a bezier's swoop does not — which is why this is not the default.
+  orthogonal,
+}
+
+/// Builds and probes the paths used for connections.
 abstract final class ConnectionPath {
   /// Fraction of the endpoint distance used for the bezier control arms.
   static const double defaultCurvature = 0.5;
+
+  /// How far an orthogonal wire runs straight out of a port before its
+  /// first corner, in scene units.
+  static const double defaultStub = 24;
+
+  /// Radius of an orthogonal wire's corners, in scene units.
+  static const double defaultCornerRadius = 8;
+
+  /// The conic weight that makes a quarter turn a true circular arc.
+  static const double _quarterArcWeight = 0.70710678;
   static const double minControlArm = 36;
   static const double maxControlArm = 220;
 
-  /// A cubic bezier leaving [from] along its side's normal and arriving at
-  /// [to] against its own — or, with [via], a run of them through every
-  /// point in it, in order.
+  /// The wire from [from] to [to] in [style] — or, with [via], through every
+  /// point in it, in order — as one contour.
   ///
   /// Both points are in whatever space the caller is painting in — pass screen
-  /// coordinates when painting, scene coordinates when hit-testing the model.
+  /// coordinates when painting, scene coordinates when hit-testing the model;
+  /// [scale] then scales the arms, the stub and the corners with them.
   ///
   /// [via] are the points the wire is *routed through*, not bezier control
-  /// points: the user places them on the wire and the control points are
-  /// solved from them. Each waypoint takes the direction that bisects its two
-  /// neighbours, and each segment's arms are [controlArm] on that segment's
-  /// own length — so the ends leave and arrive exactly as they would without
-  /// any, and a wire with no waypoints is the very same curve as before.
+  /// points: the user places them on the wire and the geometry is solved
+  /// from them. Curved, each waypoint takes the direction that bisects its
+  /// two neighbours and each segment's arms are [controlArm] on that
+  /// segment's own length — so the ends leave and arrive exactly as they
+  /// would without any, and a wire with no waypoints is the very same curve
+  /// as before. Orthogonal, each waypoint is a corner.
   static Path build(
     Offset from,
     Offset to, {
     PortSide fromSide = PortSide.right,
     PortSide toSide = PortSide.left,
     List<Offset> via = const <Offset>[],
+    ConnectionStyle style = ConnectionStyle.curved,
     double curvature = defaultCurvature,
+    double stub = defaultStub,
+    double cornerRadius = defaultCornerRadius,
     double scale = 1.0,
   }) {
-    final path = Path()..moveTo(from.dx, from.dy);
-    for (final segment in segments(
-      from,
-      to,
-      fromSide: fromSide,
-      toSide: toSide,
-      via: via,
-      curvature: curvature,
-      scale: scale,
-    )) {
-      path.cubicTo(
-        segment.c1.dx,
-        segment.c1.dy,
-        segment.c2.dx,
-        segment.c2.dy,
-        segment.end.dx,
-        segment.end.dy,
-      );
+    switch (style) {
+      case ConnectionStyle.curved:
+        final path = Path()..moveTo(from.dx, from.dy);
+        for (final segment in segments(
+          from,
+          to,
+          fromSide: fromSide,
+          toSide: toSide,
+          via: via,
+          curvature: curvature,
+          scale: scale,
+        )) {
+          segment.appendTo(path);
+        }
+        return path;
+      case ConnectionStyle.orthogonal:
+        // Rounded over the whole run rather than span by span: the corner
+        // at a waypoint has one leg in each span, and a span cannot round a
+        // corner it only sees half of.
+        final corners = <Offset>[from];
+        for (final span in orthogonalSpans(
+          from,
+          to,
+          fromSide: fromSide,
+          toSide: toSide,
+          via: via,
+          stub: stub * scale,
+        )) {
+          corners.addAll(span.corners.skip(1));
+        }
+        return roundedPolyline(corners, radius: cornerRadius * scale);
     }
+  }
+
+  /// The route of an orthogonal wire, one span per consecutive pair of
+  /// `[from, ...via, to]`, each span's corners running from its start to
+  /// its end.
+  ///
+  /// Spans are routed in order because each one is told how the wire
+  /// arrived at its start — a waypoint is a corner, and the router prefers
+  /// to leave one across the axis it came in on.
+  static List<PolylineSpan> orthogonalSpans(
+    Offset from,
+    Offset to, {
+    PortSide fromSide = PortSide.right,
+    PortSide toSide = PortSide.left,
+    List<Offset> via = const <Offset>[],
+    double stub = defaultStub,
+  }) {
+    final points = <Offset>[from, ...via, to];
+    final last = points.length - 1;
+    final spans = <PolylineSpan>[];
+    Offset? incoming;
+    for (var i = 0; i < last; i++) {
+      final legs = OrthogonalRoute.legs(
+        start: points[i],
+        end: points[i + 1],
+        startDirection: i == 0 ? NodeGeometry.normalOf(fromSide) : null,
+        endDirection: i + 1 == last ? -NodeGeometry.normalOf(toSide) : null,
+        incomingAxis: incoming,
+        stub: stub,
+      );
+      spans.add(PolylineSpan(legs));
+      incoming = legs.length >= 2
+          ? legs[legs.length - 1] - legs[legs.length - 2]
+          : null;
+    }
+    return spans;
+  }
+
+  /// [corners] joined by straight legs, each corner turned through a
+  /// circular arc of [radius] — or less, where a leg is too short for one.
+  static Path roundedPolyline(List<Offset> corners, {required double radius}) {
+    final path = Path();
+    if (corners.isEmpty) return path;
+    path.moveTo(corners.first.dx, corners.first.dy);
+    for (var i = 1; i < corners.length - 1; i++) {
+      final prev = corners[i - 1];
+      final corner = corners[i];
+      final next = corners[i + 1];
+      final inLeg = corner - prev;
+      final outLeg = next - corner;
+      final r = math.min(radius, math.min(inLeg.distance, outLeg.distance) / 2);
+      if (r <= 0 || inLeg.distance == 0 || outLeg.distance == 0) {
+        path.lineTo(corner.dx, corner.dy);
+        continue;
+      }
+      final arcIn = corner - inLeg / inLeg.distance * r;
+      final arcOut = corner + outLeg / outLeg.distance * r;
+      path
+        ..lineTo(arcIn.dx, arcIn.dy)
+        ..conicTo(
+          corner.dx,
+          corner.dy,
+          arcOut.dx,
+          arcOut.dy,
+          _quarterArcWeight,
+        );
+    }
+    path.lineTo(corners.last.dx, corners.last.dy);
     return path;
   }
 
@@ -113,19 +227,31 @@ abstract final class ConnectionPath {
     ];
   }
 
+  /// The point of the segment `a`–`b` closest to [point].
+  static Offset _projectOntoLeg(Offset point, Offset a, Offset b) {
+    final leg = b - a;
+    final lengthSquared = leg.distanceSquared;
+    if (lengthSquared == 0) return a;
+    final t =
+        ((point - a).dx * leg.dx + (point - a).dy * leg.dy) / lengthSquared;
+    return a + leg * t.clamp(0.0, 1.0);
+  }
+
   static Offset _unit(Offset v) {
     final length = v.distance;
     return length == 0 ? Offset.zero : v / length;
   }
 
   /// Where a new waypoint dropped at [point] belongs on the route
-  /// `[from, ...via, to]`: the closest point on the curve as drawn, and the
-  /// index in [via] to insert it at so the wire still runs in order.
+  /// `[from, ...via, to]`: the closest point on the wire, and the index in
+  /// [via] to insert it at so the wire still runs in order.
   ///
-  /// Per segment rather than over the whole path, because the index is the
-  /// answer that matters and one contour cannot say which cubic a distance
+  /// Per span rather than over the whole path, because the index is the
+  /// answer that matters and one contour cannot say which span a distance
   /// along it fell in. A click, not a frame — it walks the metrics of every
-  /// segment of one wire.
+  /// span of one wire. A straight leg is projected onto exactly; a cubic is
+  /// sampled every [step]. Orthogonal spans are probed unrounded, so at a
+  /// corner the answer can sit a couple of pixels off the drawn arc.
   static RoutePoint nearestOnRoute(
     Offset point, {
     required Offset from,
@@ -133,29 +259,51 @@ abstract final class ConnectionPath {
     PortSide fromSide = PortSide.right,
     PortSide toSide = PortSide.left,
     List<Offset> via = const <Offset>[],
+    ConnectionStyle style = ConnectionStyle.curved,
     double curvature = defaultCurvature,
+    double stub = defaultStub,
     double step = 4,
   }) {
     var best = RoutePoint(index: 0, position: from, distance: double.infinity);
-    final route = segments(
-      from,
-      to,
-      fromSide: fromSide,
-      toSide: toSide,
-      via: via,
-      curvature: curvature,
-    );
-    for (final (index, segment) in route.indexed) {
-      final path = Path()
-        ..moveTo(segment.start.dx, segment.start.dy)
-        ..cubicTo(
-          segment.c1.dx,
-          segment.c1.dy,
-          segment.c2.dx,
-          segment.c2.dy,
-          segment.end.dx,
-          segment.end.dy,
-        );
+    final List<ConnectionSpan> route = switch (style) {
+      ConnectionStyle.curved => segments(
+        from,
+        to,
+        fromSide: fromSide,
+        toSide: toSide,
+        via: via,
+        curvature: curvature,
+      ),
+      ConnectionStyle.orthogonal => orthogonalSpans(
+        from,
+        to,
+        fromSide: fromSide,
+        toSide: toSide,
+        via: via,
+        stub: stub,
+      ),
+    };
+    for (final (index, span) in route.indexed) {
+      if (span is PolylineSpan) {
+        for (var i = 1; i < span.corners.length; i++) {
+          final position = _projectOntoLeg(
+            point,
+            span.corners[i - 1],
+            span.corners[i],
+          );
+          final distance = (position - point).distance;
+          if (distance < best.distance) {
+            best = RoutePoint(
+              index: index,
+              position: position,
+              distance: distance,
+            );
+          }
+        }
+        continue;
+      }
+      final path = Path()..moveTo(span.start.dx, span.start.dy);
+      span.appendTo(path);
       for (final metric in path.computeMetrics()) {
         final length = metric.length;
         if (length == 0) continue;
@@ -232,10 +380,16 @@ abstract final class ConnectionPath {
   /// [spacing] is the scene distance aimed for between heads; the count is
   /// rounded to fit and clamped to `1..maxCount`, so a short link still says
   /// which way it points and a very long one does not become a dotted line.
+  ///
+  /// [axisAligned] squares each head to the nearer axis, for an orthogonal
+  /// wire: a sample that lands on a corner's arc would otherwise take the
+  /// arc's slant, and a head skewed forty degrees on a right-angled wire
+  /// reads as a glitch.
   static List<PathArrow> arrowsAlong(
     Path path, {
     required double spacing,
     required int maxCount,
+    bool axisAligned = false,
   }) {
     assert(spacing > 0);
     for (final metric in path.computeMetrics()) {
@@ -248,12 +402,18 @@ abstract final class ConnectionPath {
         // lands back on the seam it was moved away from.
         final tangent = metric.getTangentForOffset(length * (i + 0.5) / count);
         if (tangent == null) continue;
-        arrows.add(PathArrow(tangent.position, tangent.vector));
+        final direction = axisAligned
+            ? _squared(tangent.vector)
+            : tangent.vector;
+        arrows.add(PathArrow(tangent.position, direction));
       }
       return arrows;
     }
     return const <PathArrow>[];
   }
+
+  static Offset _squared(Offset v) =>
+      v.dx.abs() >= v.dy.abs() ? Offset(v.dx.sign, 0) : Offset(0, v.dy.sign);
 
   static Offset? midpoint(Path path) {
     for (final metric in path.computeMetrics()) {
@@ -264,9 +424,23 @@ abstract final class ConnectionPath {
   }
 }
 
-/// One cubic of a connection's route, as [ConnectionPath.segments] builds it.
+/// One span of a wire's route — from a port or a waypoint to the next.
+///
+/// What [ConnectionPath.nearestOnRoute] walks, in either style: it needs a
+/// path per span and does not care what the span is made of.
+sealed class ConnectionSpan {
+  const ConnectionSpan();
+
+  Offset get start;
+  Offset get end;
+
+  /// Draws the span onto [path], whose current point is [start].
+  void appendTo(Path path);
+}
+
+/// One cubic of a curved route, as [ConnectionPath.segments] builds it.
 @immutable
-class CubicSegment {
+final class CubicSegment extends ConnectionSpan {
   const CubicSegment({
     required this.start,
     required this.c1,
@@ -274,10 +448,40 @@ class CubicSegment {
     required this.end,
   });
 
+  @override
   final Offset start;
   final Offset c1;
   final Offset c2;
+  @override
   final Offset end;
+
+  @override
+  void appendTo(Path path) =>
+      path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, end.dx, end.dy);
+}
+
+/// The legs of one span of an orthogonal route, as
+/// [ConnectionPath.orthogonalSpans] builds it: [corners] runs from the
+/// span's start to its end, every leg between two of them axis-aligned.
+@immutable
+final class PolylineSpan extends ConnectionSpan {
+  const PolylineSpan(this.corners);
+
+  final List<Offset> corners;
+
+  @override
+  Offset get start => corners.first;
+  @override
+  Offset get end => corners.last;
+
+  /// Sharp corners: the rounding is done over the whole wire, since a corner
+  /// at a waypoint has one leg in each of two spans.
+  @override
+  void appendTo(Path path) {
+    for (final corner in corners.skip(1)) {
+      path.lineTo(corner.dx, corner.dy);
+    }
+  }
 }
 
 /// The answer to [ConnectionPath.nearestOnRoute].

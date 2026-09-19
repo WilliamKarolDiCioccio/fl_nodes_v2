@@ -23,12 +23,18 @@ class ConnectionRouter {
   const ConnectionRouter({
     required this.graph,
     required this.sizeOf,
+    this.style = ConnectionStyle.curved,
     this.curvature = ConnectionPath.defaultCurvature,
+    this.stub = ConnectionPath.defaultStub,
+    this.cornerRadius = ConnectionPath.defaultCornerRadius,
   });
 
   final NodeGraph graph;
   final Size Function(GraphNode node) sizeOf;
+  final ConnectionStyle style;
   final double curvature;
+  final double stub;
+  final double cornerRadius;
 
   /// Scene-space endpoints, or null if either end no longer exists.
   ConnectionEndpoints? endpointsOf(NodeConnection connection) {
@@ -57,7 +63,10 @@ class ConnectionRouter {
       fromSide: ends.fromSide,
       toSide: ends.toSide,
       via: connection.waypoints,
+      style: style,
       curvature: curvature,
+      stub: stub,
+      cornerRadius: cornerRadius,
     );
   }
 }
