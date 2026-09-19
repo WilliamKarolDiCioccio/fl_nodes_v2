@@ -152,6 +152,7 @@ export 'src/serialization/payload_codecs.dart'
 export 'src/theme/node_editor_theme.dart' show NodeEditorTheme;
 export 'src/widgets/connection_label_editor.dart'
     show showConnectionLabelEditor;
+export 'src/widgets/edge_scroll_config.dart' show EdgeScrollConfig;
 export 'src/widgets/node_editor.dart'
     show CanvasDragBehavior, NodeEditor, NodeEditorState;
 export 'src/widgets/group_name_editor.dart' show showGroupNameEditor;

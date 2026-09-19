@@ -4,6 +4,7 @@ import 'dart:ui' show FragmentShader;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 
 import '../controller/node_editor_controller.dart';
@@ -30,6 +31,7 @@ import 'node_description_dialog.dart';
 import '../theme/node_editor_theme.dart';
 import 'comment_view.dart';
 import 'connection_label_editor.dart';
+import 'edge_scroll_config.dart';
 import 'group_name_editor.dart';
 import 'group_view.dart';
 import 'node_editor_scope.dart';
@@ -83,6 +85,7 @@ class NodeEditor extends StatefulWidget {
     this.onPortSecondaryTap,
     this.onConnectionSecondaryTap,
     this.contextMenus = const NodeEditorMenus(),
+    this.edgeScroll = const EdgeScrollConfig(),
     this.minimap,
     this.minimapController,
   });
@@ -144,6 +147,15 @@ class NodeEditor extends StatefulWidget {
   /// that already had its own menu keeps it and does not get two.
   final NodeEditorMenus? contextMenus;
 
+  /// Scrolling the canvas by holding a drag against its edge, or null for
+  /// none.
+  ///
+  /// On by default, like [contextMenus]: a wire dragged toward a node that is
+  /// off screen has nowhere to go otherwise but a zoom-out first. It follows a
+  /// wire, a node and a group; the marquee and the corner grip are not
+  /// scrolled.
+  final EdgeScrollConfig? edgeScroll;
+
   /// The minimap panel, or null for none.
   ///
   /// Off by default, unlike [contextMenus]: a right-click already means a
@@ -170,7 +182,8 @@ class NodeEditor extends StatefulWidget {
 /// simply staying [none], because [none] falls through to panning.
 enum _CanvasGesture { none, pan, marquee, port, blocked }
 
-class NodeEditorState extends State<NodeEditor> {
+class NodeEditorState extends State<NodeEditor>
+    with SingleTickerProviderStateMixin {
   final GlobalKey _canvasKey = GlobalKey();
   final FocusNode _focusNode = FocusNode(debugLabel: 'NodeEditor');
   final MenuController _menuController = MenuController();
@@ -264,8 +277,33 @@ class NodeEditorState extends State<NodeEditor> {
 
   // Node drag state.
   Set<String> _draggingNodeIds = const <String>{};
+
+  /// Where the drag began, in **scene** space.
+  ///
+  /// Scene rather than screen so the delta is `toScene(pointer) - origin`,
+  /// which is what makes the edge scroll work at all: the camera moves under
+  /// a pointer that has not, the same screen point now names a different
+  /// scene point, and the nodes follow it. A screen-space delta would have
+  /// had to be told how far the camera had gone. It also puts a wheel-zoom
+  /// mid-drag right for free, since a zoom about the pointer leaves the scene
+  /// point under it where it was.
   Offset? _nodeDragOrigin;
   Map<String, Offset> _nodeDragStartPositions = const <String, Offset>{};
+
+  // Edge scroll state.
+
+  /// Pans the camera while a drag is parked against an edge.
+  ///
+  /// A [Ticker] rather than a periodic timer: it is muted with the widget's
+  /// [TickerMode], it stops with the frame clock in tests, and its elapsed
+  /// time makes the speed a per-second figure rather than a per-frame one.
+  late final Ticker _edgeScrollTicker;
+  Offset _edgeScrollVelocity = Offset.zero;
+  Duration _edgeScrollElapsed = Duration.zero;
+
+  /// The last position a wire or node drag was seen at, in canvas-local
+  /// coordinates; where the drag is re-applied after each scroll step.
+  Offset? _dragPointer;
 
   // Connection drag state.
   PortRef? _pendingSource;
@@ -300,6 +338,10 @@ class NodeEditorState extends State<NodeEditor> {
   @override
   void initState() {
     super.initState();
+    // Made here rather than lazily: `createTicker` reads the ambient
+    // `TickerMode`, and the first read must not be from `dispose`, where the
+    // element is already deactivated and the lookup asserts.
+    _edgeScrollTicker = createTicker(_handleEdgeScrollTick);
     _loadGridShader();
   }
 
@@ -357,6 +399,8 @@ class NodeEditorState extends State<NodeEditor> {
 
   @override
   void dispose() {
+    // Before the mixin's own dispose, which asserts that nothing is ticking.
+    _edgeScrollTicker.dispose();
     _gridShader?.dispose();
     _focusNode.dispose();
     // Only ever the one made here: a host's controller outlives its editor.
@@ -498,7 +542,7 @@ class NodeEditorState extends State<NodeEditor> {
   void _handleScaleUpdate(ScaleUpdateDetails details) {
     if (_canvasGesture == _CanvasGesture.blocked) return;
     if (_canvasGesture == _CanvasGesture.port) {
-      _handlePortDragUpdate(_viewport.toScene(details.localFocalPoint));
+      _dragTo(details.localFocalPoint);
       return;
     }
     if (_canvasGesture == _CanvasGesture.marquee) {
@@ -763,7 +807,7 @@ class NodeEditorState extends State<NodeEditor> {
     _controller.history.beginTransaction();
     setState(() {
       _draggingNodeIds = ids;
-      _nodeDragOrigin = globalPosition;
+      _nodeDragOrigin = _toScene(globalPosition);
       _nodeDragStartPositions = <String, Offset>{
         for (final id in ids) id: _controller.graph.nodes[id]!.position,
       };
@@ -814,19 +858,32 @@ class NodeEditorState extends State<NodeEditor> {
     _controller.renameGroup(group.id, name);
   }
 
-  void _handleNodeDragUpdate(Offset globalPosition) {
+  void _handleNodeDragUpdate(Offset globalPosition) =>
+      _dragTo(_toLocal(globalPosition));
+
+  /// Carries whichever drag is in progress — a wire or the selection — to
+  /// [localPosition], and notes where that is for the edge scroll.
+  ///
+  /// One funnel for both, because both arrive here twice over: from the
+  /// pointer moving, and from [_handleEdgeScrollTick] with a pointer that has
+  /// not. A drag that is over by the time the pointer speaks again — cancelled
+  /// with Escape, say — stops the scroll rather than leaving the camera
+  /// drifting on its own.
+  void _dragTo(Offset localPosition) {
+    final scene = _viewport.toScene(localPosition);
     if (_pendingSource != null) {
-      _handlePortDragUpdate(_toScene(globalPosition));
+      _handlePortDragUpdate(scene);
+    } else if (_nodeDragOrigin case final Offset origin) {
+      final delta = scene - origin;
+      _controller.moveNodes(<String, Offset>{
+        for (final entry in _nodeDragStartPositions.entries)
+          entry.key: entry.value + delta,
+      }, snap: _theme.snapToGrid);
+    } else {
+      _stopEdgeScroll();
       return;
     }
-    final origin = _nodeDragOrigin;
-    if (origin == null) return;
-    // Pointer deltas arrive in screen pixels; the graph lives in scene units.
-    final delta = (globalPosition - origin) / _viewport.scale;
-    _controller.moveNodes(<String, Offset>{
-      for (final entry in _nodeDragStartPositions.entries)
-        entry.key: entry.value + delta,
-    }, snap: _theme.snapToGrid);
+    _trackEdgeScroll(localPosition);
   }
 
   void _handleNodeDragEnd() {
@@ -834,6 +891,7 @@ class NodeEditorState extends State<NodeEditor> {
       _handlePortDragEnd();
       return;
     }
+    _stopEdgeScroll();
     if (_nodeDragOrigin == null) return;
     _controller.history.commitTransaction();
     setState(() {
@@ -841,6 +899,52 @@ class NodeEditorState extends State<NodeEditor> {
       _nodeDragOrigin = null;
       _nodeDragStartPositions = const <String, Offset>{};
     });
+  }
+
+  // ---------------------------------------------------------- edge scroll
+
+  /// Reads the pull at [localPosition] and starts or stops the ticker to
+  /// match. The velocity is re-read on every pointer event, so a drag that
+  /// eases back from the edge slows before it stops.
+  void _trackEdgeScroll(Offset localPosition) {
+    _dragPointer = localPosition;
+    final velocity =
+        widget.edgeScroll?.velocityAt(localPosition, _viewportSize) ??
+        Offset.zero;
+    _edgeScrollVelocity = velocity;
+    if (velocity == Offset.zero) {
+      _edgeScrollTicker.stop();
+    } else if (!_edgeScrollTicker.isActive) {
+      _edgeScrollElapsed = Duration.zero;
+      _edgeScrollTicker.start();
+    }
+  }
+
+  void _stopEdgeScroll() {
+    _edgeScrollTicker.stop();
+    _edgeScrollVelocity = Offset.zero;
+    _dragPointer = null;
+  }
+
+  void _handleEdgeScrollTick(Duration elapsed) {
+    final pointer = _dragPointer;
+    if (pointer == null || _edgeScrollVelocity == Offset.zero) {
+      _stopEdgeScroll();
+      return;
+    }
+    final seconds =
+        (elapsed - _edgeScrollElapsed).inMicroseconds /
+        Duration.microsecondsPerSecond;
+    _edgeScrollElapsed = elapsed;
+    // A stalled frame is not a leap: the step is capped so a hitch cannot
+    // fling the canvas further than a few frames' worth.
+    final step = math.min(seconds, 1 / 20);
+    if (step <= 0) return;
+
+    // The pull points at the edge; the content has to come the other way.
+    _controller.camera.panBy(-_edgeScrollVelocity * step);
+    // The pointer is where it was; what is under it is not.
+    _dragTo(pointer);
   }
 
   // ------------------------------------------------------------- resizing
@@ -951,6 +1055,8 @@ class NodeEditorState extends State<NodeEditor> {
   }
 
   void _handlePortDragEnd() {
+    // Whatever the wire does next, nobody is holding it.
+    _stopEdgeScroll();
     final source = _pendingSource;
     final target = _pendingTarget;
     final pending = _pending;
@@ -1025,6 +1131,7 @@ class NodeEditorState extends State<NodeEditor> {
   }
 
   void _clearPendingConnection() {
+    _stopEdgeScroll();
     if (_pendingSource == null && _pending == null) return;
     setState(() {
       _pendingSource = null;
