@@ -87,7 +87,10 @@ class OverlayPainter extends CustomPainter {
       to,
       fromSide: pending.originSide,
       toSide: _opposite(pending.originSide),
+      style: theme.connectionStyle,
       curvature: theme.connectionCurvature,
+      stub: theme.connectionStub,
+      cornerRadius: theme.connectionCornerRadius,
       scale: viewport.scale,
     );
 

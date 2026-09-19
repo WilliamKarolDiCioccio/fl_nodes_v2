@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../geometry/connection_path.dart' show ConnectionStyle;
+
 /// Visual configuration for the canvas chrome: grid, connections, ports,
 /// selection affordances and zoom limits.
 ///
@@ -28,6 +30,10 @@ class NodeEditorTheme {
     this.connectionWidth = 2,
     this.selectedConnectionWidth = 3,
     this.connectionCurvature = 0.5,
+    this.connectionStyle = ConnectionStyle.curved,
+    this.connectionStub = 24,
+    this.connectionCornerRadius = 8,
+    this.waypointAlignSnap = 6,
     this.portRadius = 6,
     this.portHitRadius = 11,
     this.portMinScale = 0.25,
@@ -110,6 +116,27 @@ class NodeEditorTheme {
 
   /// Fraction of the endpoint distance used for the bezier control arms.
   final double connectionCurvature;
+
+  /// Curved or right-angled, for every wire on the canvas.
+  ///
+  /// One choice for the whole canvas rather than one per wire: which reads
+  /// better is a question about the graph and its reader. The waypoints
+  /// mean the same under both, so switching moves no data.
+  final ConnectionStyle connectionStyle;
+
+  /// How far an orthogonal wire runs straight out of a port before it may
+  /// turn, in scene units.
+  final double connectionStub;
+
+  /// The radius of an orthogonal wire's corners, in scene units.
+  final double connectionCornerRadius;
+
+  /// How close a dragged waypoint has to come to lining up with its
+  /// neighbour, in screen pixels, before it is pulled onto that line.
+  ///
+  /// Orthogonal only: a handle is a corner there, and a corner one pixel
+  /// off its neighbour's row draws a one-pixel jog. Zero turns it off.
+  final double waypointAlignSnap;
 
   /// Screen-space slop when picking a connection.
   final double connectionHitTolerance;
@@ -214,6 +241,10 @@ class NodeEditorTheme {
     double? connectionWidth,
     double? selectedConnectionWidth,
     double? connectionCurvature,
+    ConnectionStyle? connectionStyle,
+    double? connectionStub,
+    double? connectionCornerRadius,
+    double? waypointAlignSnap,
     double? connectionHitTolerance,
     double? connectionArrowSpacing,
     int? connectionArrowMaxCount,
@@ -258,6 +289,11 @@ class NodeEditorTheme {
       selectedConnectionWidth:
           selectedConnectionWidth ?? this.selectedConnectionWidth,
       connectionCurvature: connectionCurvature ?? this.connectionCurvature,
+      connectionStyle: connectionStyle ?? this.connectionStyle,
+      connectionStub: connectionStub ?? this.connectionStub,
+      connectionCornerRadius:
+          connectionCornerRadius ?? this.connectionCornerRadius,
+      waypointAlignSnap: waypointAlignSnap ?? this.waypointAlignSnap,
       connectionHitTolerance:
           connectionHitTolerance ?? this.connectionHitTolerance,
       connectionArrowSpacing:
@@ -304,6 +340,10 @@ class NodeEditorTheme {
     connectionWidth,
     selectedConnectionWidth,
     connectionCurvature,
+    connectionStyle,
+    connectionStub,
+    connectionCornerRadius,
+    waypointAlignSnap,
     connectionHitTolerance,
     connectionArrowSpacing,
     connectionArrowMaxCount,

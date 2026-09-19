@@ -105,13 +105,20 @@ double arrowheadSize(double scale) => 9.0 * math.min(scale, 1.4) / scale;
 /// when node geometry actually moves.
 class ConnectionLayout {
   ConnectionLayout({
+    this.style = ConnectionStyle.curved,
     this.curvature = ConnectionPath.defaultCurvature,
+    this.stub = ConnectionPath.defaultStub,
+    this.cornerRadius = ConnectionPath.defaultCornerRadius,
     this.arrowSpacing = 140,
     this.maxArrows = 4,
     double spatialCellSize = 512,
   }) : _index = SpatialHashGrid(cellSize: spatialCellSize);
 
+  /// How every wire is drawn. Fed from the theme, like the rest.
+  ConnectionStyle style;
   double curvature;
+  double stub;
+  double cornerRadius;
 
   /// Scene distance aimed for between a connection's direction arrows, and the
   /// ceiling on how many one connection gets. Fed from the theme.
@@ -125,7 +132,10 @@ class ConnectionLayout {
   final Map<String, ConnectionGeometry> _geometry =
       <String, ConnectionGeometry>{};
   int _revision = -1;
+  ConnectionStyle? _builtStyle;
   double _builtCurvature = double.nan;
+  double _builtStub = double.nan;
+  double _builtCornerRadius = double.nan;
   double _builtArrowSpacing = double.nan;
   int _builtMaxArrows = -1;
   NodePrototypeRegistry? _builtRegistry;
@@ -134,7 +144,10 @@ class ConnectionLayout {
   /// baked into the cached path or its arrows, so a change to any is the one
   /// case with nothing to reuse.
   bool get _settingsHold =>
+      _builtStyle == style &&
       _builtCurvature == curvature &&
+      _builtStub == stub &&
+      _builtCornerRadius == cornerRadius &&
       _builtArrowSpacing == arrowSpacing &&
       _builtMaxArrows == maxArrows;
 
@@ -178,7 +191,10 @@ class ConnectionLayout {
     // Curvature is baked into every path and the registry decides every
     // caption, so a change to either is the one case with nothing to reuse.
     final reusable = _settingsHold && identical(_builtRegistry, registry);
+    _builtStyle = style;
     _builtCurvature = curvature;
+    _builtStub = stub;
+    _builtCornerRadius = cornerRadius;
     _builtArrowSpacing = arrowSpacing;
     _builtMaxArrows = maxArrows;
     _builtRegistry = registry;
@@ -187,7 +203,10 @@ class ConnectionLayout {
       graph: graph,
       // Anchors, not boxes — see `NodeEditorLayout.anchorSizeOf`.
       sizeOf: controller.layout.anchorSizeOf,
+      style: style,
       curvature: curvature,
+      stub: stub,
+      cornerRadius: cornerRadius,
     );
 
     if (!reusable) {
@@ -246,7 +265,10 @@ class ConnectionLayout {
               fromSide: ends.fromSide,
               toSide: ends.toSide,
               via: connection.waypoints,
+              style: style,
               curvature: curvature,
+              stub: stub,
+              cornerRadius: cornerRadius,
             );
       if (!samePath) _pathBuildCount++;
       final arrows = samePath
@@ -255,6 +277,7 @@ class ConnectionLayout {
               path,
               spacing: arrowSpacing,
               maxCount: maxArrows,
+              axisAligned: style == ConnectionStyle.orthogonal,
             );
 
       // A captionable link needs an anchor even before it has a caption, or

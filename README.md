@@ -239,6 +239,17 @@ at the receiving port, each taking the curve's own slope.
 `NodeEditorTheme.connectionArrowSpacing` (140) is the gap aimed for, rounded to
 fit and clamped to `1..connectionArrowMaxCount` (4).
 
+**Shape** is one choice for the whole canvas, `NodeEditorTheme.connectionStyle`:
+`curved` (the default) is a bezier leaving and arriving along the port normals;
+`orthogonal` is axis-aligned legs with rounded corners, a Z between facing
+ports and a lane round the back when the target is behind. Waypoints mean the
+same under both — points the wire passes through — so switching moves no data;
+in right angles each one is a corner, and a dragged handle snaps onto the row or
+column of its neighbour (`waypointAlignSnap`, 6 px). Neither style routes
+around cards: the waypoints are what a wire is taken around a card with, and a
+straight leg under a card shows it where a swoop does not — which is why
+curved is the default.
+
 ### Prototypes
 
 A prototype is not a template stamped out once — it is a **reduction rule**.
@@ -633,7 +644,7 @@ rather than gated.
 ### Theming
 
 `NodeEditorTheme.dark()` / `.light()`, or build one field by field. It covers
-colours, the grid, connection width and curvature, port radius and
+colours, the grid, connection width, curvature and style, port radius and
 `portMinScale`, selection and marquee styling, scale limits, `snapToGrid`, hit
 tolerances and the direction markers. Omit `theme` and the editor picks dark or
 light from the ambient `Theme` brightness.

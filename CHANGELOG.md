@@ -1,5 +1,47 @@
 ## Unreleased
 
+### Wires can be drawn in right angles
+
+- `NodeEditorTheme.connectionStyle` (`ConnectionStyle`, `curved`) — every
+  wire on the canvas as a bezier, as before, or as axis-aligned legs with
+  rounded corners: a Z between facing ports, an L between perpendicular ones,
+  and a lane round the back when the target is behind the source. Readability
+  on a dense board was the ask, and it is a preference rather than a
+  replacement because the two fail differently — a bezier under a card reads
+  as a swoop, a horizontal leg under one reads as a mistake, and neither style
+  routes around cards. `connectionStub` (24) is how far a wire runs straight
+  out of a port before it may turn, `connectionCornerRadius` (8) the arc at
+  each corner.
+
+  One painter, two routers: the painter never built a path, `ConnectionLayout`
+  did through `ConnectionPath.build`, and everything downstream samples the
+  `Path`. `ConnectionSpan` is the seam — `CubicSegment` or `PolylineSpan`, one
+  per consecutive pair of `[from, …waypoints, to]` — and `nearestOnRoute` walks
+  either, projecting onto a leg exactly rather than sampling it.
+  `OrthogonalRoute.legs` is templates ranked by corners, then length, then a
+  fixed order, with one hard filter: no two consecutive legs anti-parallel.
+  Corners are rounded over the whole wire, since the corner at a waypoint has
+  one leg in each span. The layout bakes the style in with the other
+  settings, so a switch is one rebuild.
+
+  Waypoints mean the same in both styles — points the wire passes through — so
+  switching moves no data; in right angles each is a corner, and the router is
+  told how the wire arrived at one so it sets off across that axis rather than
+  running straight through and turning somewhere nobody asked. A dragged
+  handle snaps onto the row or column of its neighbour on either side
+  (`NodeEditorTheme.waypointAlignSnap`, 6 screen px, each axis on its own),
+  because a corner one pixel off its neighbour draws a one-pixel jog. Arrows
+  are squared to the nearer axis (`ConnectionPath.arrowsAlong(axisAligned:)`)
+  so a head on a corner's arc does not take the arc's slant. The pending wire
+  takes the style too. The example's toolbar has the toggle.
+
+  The curved default is untouched: `ConnectionPath.build` with no style is the
+  same cubic to the control point. `test/orthogonal_links_test.dart` pins the
+  Z, the straight row, the lane behind (on and off the row), the same-side
+  case, a sweep of every side pair over a grid of ends for axis-alignment and
+  no U-turn, the corner at a waypoint, the rounding, exact projection, the
+  squared arrows, the one-rebuild switch, and the alignment snap on and off.
+
 ### A wire can be routed through waypoints
 
 - `NodeConnection.waypoints` (`List<Offset>`, `const []`) — scene points a

@@ -400,7 +400,10 @@ class NodeEditorState extends State<NodeEditor>
     if (resolved == _resolvedTheme) return;
     _resolvedTheme = resolved;
     _connections
+      ..style = resolved.connectionStyle
       ..curvature = resolved.connectionCurvature
+      ..stub = resolved.connectionStub
+      ..cornerRadius = resolved.connectionCornerRadius
       ..arrowSpacing = resolved.connectionArrowSpacing
       ..maxArrows = resolved.connectionArrowMaxCount;
     _controller.camera.setScaleLimits(resolved.minScale, resolved.maxScale);
@@ -483,7 +486,9 @@ class NodeEditorState extends State<NodeEditor>
       fromSide: ends.fromSide,
       toSide: ends.toSide,
       via: geometry.connection.waypoints,
+      style: _theme.connectionStyle,
       curvature: _theme.connectionCurvature,
+      stub: _theme.connectionStub,
     );
   }
 
@@ -1029,9 +1034,43 @@ class NodeEditorState extends State<NodeEditor>
     _controller.moveWaypoint(
       waypoint.connectionId,
       waypoint.index,
-      scene,
+      _alignedWaypoint(waypoint, scene),
       snap: _theme.snapToGrid,
     );
+  }
+
+  /// [scene] pulled onto its neighbours' row or column when it comes within
+  /// `waypointAlignSnap` of one, for an orthogonal wire.
+  ///
+  /// A handle there is a corner, and a corner a pixel off the row of the
+  /// point before it draws a one-pixel jog that no amount of care with the
+  /// mouse removes. The neighbours are the points either side in the run —
+  /// the ports at the two ends — and each axis snaps on its own, so a
+  /// handle can share a row with one neighbour and a column with the other,
+  /// which is exactly the corner between them.
+  Offset _alignedWaypoint(WaypointRef waypoint, Offset scene) {
+    if (_theme.connectionStyle != ConnectionStyle.orthogonal) return scene;
+    final tolerance = _theme.waypointAlignSnap / _viewport.scale;
+    if (tolerance <= 0) return scene;
+    final connection = _controller.graph.connections[waypoint.connectionId];
+    if (connection == null) return scene;
+
+    final layout = _controller.layout;
+    final before = waypoint.index == 0
+        ? layout.portPosition(connection.from)
+        : connection.waypoints[waypoint.index - 1];
+    final after = waypoint.index == connection.waypoints.length - 1
+        ? layout.portPosition(connection.to)
+        : connection.waypoints[waypoint.index + 1];
+
+    var x = scene.dx;
+    var y = scene.dy;
+    for (final neighbour in <Offset?>[before, after]) {
+      if (neighbour == null) continue;
+      if ((neighbour.dx - scene.dx).abs() <= tolerance) x = neighbour.dx;
+      if ((neighbour.dy - scene.dy).abs() <= tolerance) y = neighbour.dy;
+    }
+    return Offset(x, y);
   }
 
   void _handleWaypointDragEnd() {
