@@ -190,6 +190,20 @@ Create menu closes**. Only the drag ends at the drop: `_pendingSource` and
 `onClosed`, which also takes focus back — clears it however the menu went. A
 wire that vanished as the menu appeared read as the drop having failed.
 
+**A drag parked against the edge scrolls the canvas**, for wires, nodes and
+groups — `edgeScroll` on the widget, an `EdgeScrollConfig` in screen pixels.
+Every drag update goes through `_dragTo(local)`, which applies whichever drag
+is live and then notes the pointer for `_trackEdgeScroll`; the `Ticker` pans
+the camera and calls `_dragTo` again with the *same* pointer, and that second
+call is the whole trick. It works only because `_nodeDragOrigin` is in scene
+space: `toScene(pointer) - origin` grows as the camera moves under a still
+pointer, where a screen-space delta would have needed to be told how far the
+camera had gone. The ticker is made in `initState`, not lazily — the first
+`createTicker` reads `TickerMode` off the element, and from `dispose` that
+lookup asserts. `_dragTo` stops the scroll when it finds nothing to drag, which
+is how Escape mid-wire does not leave the camera drifting under a button that
+is still down. `edge_scroll_test.dart`.
+
 **A node's bottom-right corner resizes it when its prototype says
 `resizable`.** The grip is `CornerGrip`, the minimap's own drawing, and the
 last `NodeView.resizeGripSize` square of the node; it carries **no recogniser

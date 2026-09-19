@@ -651,6 +651,7 @@ light from the ambient `Theme` brightness.
 | Drag port → port | Create a connection |
 | Drag port → node body | Connect to that node's first compatible port |
 | Drag port → empty canvas | `onConnectionDropped`, or Create ▸ with `createOnDrop` |
+| Hold a drag against the edge | Scroll the canvas that way — `edgeScroll`, off with `null` |
 | Click connection | Select it |
 | Double-click connection | Add a waypoint there; drag it to route the wire, double-click it to remove |
 | Drag a comment's padding | Move it — the text field takes any press on itself |
