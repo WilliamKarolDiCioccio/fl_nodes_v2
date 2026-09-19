@@ -153,7 +153,13 @@ class NodeEditorClipboard {
           for (final connection in graph.connections.values)
             if (ids.contains(connection.from.nodeId) &&
                 ids.contains(connection.to.nodeId))
-              connection,
+              // Relative to the fragment, as the nodes are, so a route pastes
+              // in the same shape wherever the fragment lands.
+              connection.copyWith(
+                waypoints: <Offset>[
+                  for (final point in connection.waypoints) point - origin,
+                ],
+              ),
         ],
         // And only frames whose every member came along. Copying half a group
         // and pasting it would frame a set the user never drew a box around.
@@ -211,6 +217,9 @@ class NodeEditorClipboard {
           id: _controller.nextId('connection'),
           from: PortRef(ids[connection.from.nodeId]!, connection.from.portId),
           to: PortRef(ids[connection.to.nodeId]!, connection.to.portId),
+          waypoints: <Offset>[
+            for (final point in connection.waypoints) base + point,
+          ],
         ),
       );
     }

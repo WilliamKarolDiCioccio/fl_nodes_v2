@@ -27,6 +27,7 @@ class ConnectionsPainter extends CustomPainter {
     required this.revision,
     required this.selectionRevision,
     this.hoveredId,
+    this.hoveredWaypoint,
     this.labelStyle,
     this.prototypes,
   });
@@ -45,6 +46,10 @@ class ConnectionsPainter extends CustomPainter {
   final int selectionRevision;
 
   final String? hoveredId;
+
+  /// The waypoint handle under the pointer, drawn like a hovered port.
+  final WaypointRef? hoveredWaypoint;
+
   final TextStyle? labelStyle;
 
   /// Decides which links are captionable, so those without a caption yet still
@@ -116,9 +121,58 @@ class ConnectionsPainter extends CustomPainter {
       }
     }
 
+    if (drawDetail) _paintWaypoints(canvas, visible);
+
     canvas.restore();
 
     if (drawDetail) _paintLabels(canvas, visible);
+  }
+
+  /// The handles of every routed wire on screen, in scene space.
+  ///
+  /// Batched by fill colour the way the curves are, with one border pass in
+  /// the canvas colour so a handle reads over its own wire. Drawn only at
+  /// the detail zoom, and [NodeEditorState] hits them under the same gate —
+  /// the port rule: a dot too small to see must not be grabbable.
+  void _paintWaypoints(Canvas canvas, Rect visible) {
+    final radius = theme.waypointRadius / math.min(viewport.scale, 1.5);
+    final fills = <Color, Path>{};
+    final borders = Path();
+
+    for (final entry in layout.entriesIn(visible)) {
+      final connection = graph.connections[entry.key];
+      if (connection == null || connection.waypoints.isEmpty) continue;
+      final priority = _priority(entry.key);
+      final wireColor = switch (priority) {
+        2 => theme.selectedConnectionColor,
+        1 => theme.hoveredConnectionColor,
+        _ => connection.color ?? theme.connectionColor,
+      };
+      for (final (index, point) in connection.waypoints.indexed) {
+        if (!visible.contains(point)) continue;
+        final hovered =
+            hoveredWaypoint != null &&
+            hoveredWaypoint!.connectionId == entry.key &&
+            hoveredWaypoint!.index == index;
+        final color = hovered ? theme.portHoverColor : wireColor;
+        final r = hovered ? radius * 1.3 : radius;
+        final rect = Rect.fromCircle(center: point, radius: r);
+        (fills[color] ??= Path()).addOval(rect);
+        borders.addOval(rect);
+      }
+    }
+
+    if (fills.isEmpty) return;
+    fills.forEach((color, path) {
+      canvas.drawPath(path, Paint()..color = color);
+    });
+    canvas.drawPath(
+      borders,
+      Paint()
+        ..color = theme.background
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 / viewport.scale,
+    );
   }
 
   int _priority(String id) {
@@ -195,6 +249,7 @@ class ConnectionsPainter extends CustomPainter {
       oldDelegate.viewport != viewport ||
       oldDelegate.theme != theme ||
       oldDelegate.hoveredId != hoveredId ||
+      oldDelegate.hoveredWaypoint != hoveredWaypoint ||
       oldDelegate.selectionRevision != selectionRevision ||
       !identical(oldDelegate.prototypes, prototypes);
 }

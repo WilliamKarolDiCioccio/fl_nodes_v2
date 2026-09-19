@@ -31,6 +31,8 @@ class NodeEditorTheme {
     this.portRadius = 6,
     this.portHitRadius = 11,
     this.portMinScale = 0.25,
+    this.waypointRadius = 4.5,
+    this.waypointHitRadius = 9,
     this.selectionWidth = 2,
     this.selectionRadius = const Radius.circular(10),
     this.selectionInset = 3,
@@ -144,6 +146,15 @@ class NodeEditorTheme {
   /// where the user is already moving.
   final double portMinScale;
 
+  /// Drawn radius of a waypoint handle on a routed wire, in scene units.
+  ///
+  /// Smaller than a port on purpose: a handle is a mark on a wire, not a
+  /// place to start one, and the two must not read as the same thing.
+  final double waypointRadius;
+
+  /// Touch target radius of a waypoint handle, in scene units.
+  final double waypointHitRadius;
+
   final Color selectionColor;
   final double selectionWidth;
   final Radius selectionRadius;
@@ -212,6 +223,8 @@ class NodeEditorTheme {
     double? portRadius,
     double? portHitRadius,
     double? portMinScale,
+    double? waypointRadius,
+    double? waypointHitRadius,
     Color? selectionColor,
     double? selectionWidth,
     Radius? selectionRadius,
@@ -257,6 +270,8 @@ class NodeEditorTheme {
       portRadius: portRadius ?? this.portRadius,
       portHitRadius: portHitRadius ?? this.portHitRadius,
       portMinScale: portMinScale ?? this.portMinScale,
+      waypointRadius: waypointRadius ?? this.waypointRadius,
+      waypointHitRadius: waypointHitRadius ?? this.waypointHitRadius,
       selectionColor: selectionColor ?? this.selectionColor,
       selectionWidth: selectionWidth ?? this.selectionWidth,
       selectionRadius: selectionRadius ?? this.selectionRadius,
@@ -298,6 +313,8 @@ class NodeEditorTheme {
     portRadius,
     portHitRadius,
     portMinScale,
+    waypointRadius,
+    waypointHitRadius,
     selectionColor,
     selectionWidth,
     selectionRadius,

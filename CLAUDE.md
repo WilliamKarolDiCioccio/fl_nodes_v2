@@ -224,6 +224,39 @@ bracket the drag in one history transaction, snap to `snapToGrid`, clamp to
 `resizeFloor`/`maxWidth`/`maxHeight` and clear the floor when the drag comes
 back to the natural height. `node_resize_test.dart`.
 
+## Waypoints
+
+A wire can be routed through points the user puts on it — `NodeConnection.waypoints`
+— and three decisions about them are the ones to keep:
+
+- **They are the wire's, not an entity.** One optional key on the connection,
+  so undo, the codec, the clipboard and deletion come with the wire and
+  nothing has to be kept in step by hand. Nothing selects one: double-click
+  and right-click cover add and remove, and a fourth selectable kind would
+  have reached the marquee, delete and the clipboard for a mark on a wire.
+- **The user moves points *on* the wire; the bezier control points are
+  solved.** `ConnectionPath.segments` gives each waypoint the direction that
+  bisects its two spans and each span its own `controlArm`, so the join is
+  smooth and the ends behave exactly as they did. With no waypoints the
+  control points are byte-identical to before — the test pins them, because
+  every cache and arrow test rests on it. Adding a handle nudges the curve
+  slightly as it takes the bisector's tangent; storing tangents would fix
+  that and give the user the very thing they are not meant to edit.
+- **`ConnectionLayout` keys on them.** It kept a curve while its endpoints
+  stood still, and a handle moves neither — the caption trap from the other
+  side. `waypoint_test.dart` has the `pathBuildCount` check.
+
+Two rules about nodes moving, both in the controller: a drag that carries
+**both** ends of a wire carries its route (the emitting end's delta, since the
+two can differ by a snap); one end moving leaves the route pinned. `applyLayout`
+clears the routes of the wires it moved, in the same step — an arrangement is a
+new picture. The canvas synthesises its double tap the way `NodeView` does,
+and for the same reason. `nearestOnRoute` works per segment because one contour
+cannot say which cubic a distance along it fell in, and the index is the answer
+that matters. The menu is the wire's with `waypoint`/`insertion` on
+`NodeMenuConnectionTarget` rather than a new target, so a host's `build` hook
+keeps matching what it matched.
+
 ## Hooks a host can hang on
 
 `guard` and `onEdit` on the controller, both null by default. `_mutate` is the

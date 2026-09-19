@@ -351,6 +351,17 @@ class NodeGraphCodec {
       if (connection.color != null) 'color': _encodeColor(connection.color!),
       if (connection.data != null)
         'data': path.at('data', () => _encodeValue(connection.data, path)),
+      // Only when there are any: a wire nobody has routed says nothing about
+      // routing, and an older build that does not know the key reads the
+      // wire and drops the route rather than refusing the document.
+      if (connection.waypoints.isNotEmpty)
+        'waypoints': path.at(
+          'waypoints',
+          () => <Object?>[
+            for (final (index, point) in connection.waypoints.indexed)
+              path.at(index, () => _encodeOffset(point, path)),
+          ],
+        ),
     };
   }
 
@@ -769,6 +780,15 @@ class NodeGraphCodec {
     data: json['data'] == null
         ? null
         : reader.at('data', () => _readValue(json['data'], reader)),
+    waypoints: json['waypoints'] == null
+        ? const <Offset>[]
+        : reader.at('waypoints', () {
+            final list = reader.array(json['waypoints']);
+            return List<Offset>.unmodifiable(<Offset>[
+              for (final (index, entry) in list.indexed)
+                reader.at(index, () => reader.offset(entry)),
+            ]);
+          }),
   );
 
   /// A frame, with any member the document does not actually carry dropped.

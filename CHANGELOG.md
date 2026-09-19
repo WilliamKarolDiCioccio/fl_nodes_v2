@@ -1,5 +1,63 @@
 ## Unreleased
 
+### A wire can be routed through waypoints
+
+- `NodeConnection.waypoints` (`List<Offset>`, `const []`) — scene points a
+  wire is routed *through*, in order, placed on the wire by the user. Not
+  bezier control points: the user never sees those. Each waypoint takes the
+  direction that bisects the two spans meeting there and each span keeps its
+  own `controlArm`, so the wire is smooth through every handle, the two ends
+  leave and arrive exactly as before, and **a wire with no waypoints is the
+  very same cubic it was** — `ConnectionPath.segments` pins the control
+  points. A dense graph's wires can be pulled clear of what they cross, which
+  is what a plain port-to-port curve cannot do however it is tuned.
+
+  On the wire rather than an entity of their own, on purpose: a handle with no
+  wire means nothing, and the wire already has an undo entry, a codec and a
+  place in the clipboard. They are not selectable either — a fourth
+  selectable kind would have reached the marquee, delete and the clipboard
+  for a mark on a wire. `ConnectionPath.build(via:)`,
+  `ConnectionPath.nearestOnRoute` (the segment a point lies on and the
+  closest point of the curve to it) and `CubicSegment`/`RoutePoint` are the
+  geometry; everything downstream — hit-testing, the arrows, the caption
+  midpoint, the emphasis re-stroke — samples the `Path` and needed nothing.
+
+  On the canvas: **double-click a wire** to add a waypoint where it was
+  clicked — on the curve, so the wire does not jump to meet the pointer — and
+  the curve nudges slightly as it takes the bisector's tangent there; **drag
+  a handle** to route the wire (one undo step, the wire selected on the way,
+  snapped to `snapToGrid`, and the edge scroll follows it); **double-click a
+  handle** to remove it. The wire's context menu gains *Add waypoint here*,
+  *Remove waypoint* on a handle, and *Clear waypoints*;
+  `NodeMenuConnectionTarget` carries `waypoint` and `insertion` for them,
+  rather than a new target, so a host's `build` hook sees the wire it always
+  did. The canvas synthesises the double tap itself, as `NodeView` does, so
+  no `DoubleTapGestureRecognizer` holds every click for the timeout. Handles
+  are painted in `ConnectionsPainter`, batched by colour with one border pass
+  in the canvas colour, at the detail zoom only and hittable under the same
+  gate (`NodeEditorTheme.waypointRadius` (4.5), `waypointHitRadius` (9)).
+
+  `setConnectionWaypoints`, `insertWaypoint`, `moveWaypoint` and
+  `removeWaypoint` on the controller, through `_mutate` as
+  `GraphEditKind.routeConnection`. Two rules about moving nodes: a wire whose
+  **both** ends move by a drag carries its route along (a selection dragged
+  across the canvas keeps its shape); a wire with one end moving keeps its
+  route pinned and the curve re-solves. **`applyLayout` clears the routes of
+  every wire it moved** — an arrangement is a new picture and a hand-drawn
+  route for the old one is stale in it — in the same undo step. A copy pastes
+  with its route in the same shape.
+
+  On disk it is one optional key, `waypoints: [[x, y], …]`, written only when
+  non-empty; `NodeGraphCodec.version` did not move for it, the bargain
+  `minHeight` and `metadata` already made: an older build reads the wire and
+  drops the route on its next save, which is a loss worth knowing about and
+  not a half-read, where a bump would refuse every document this build
+  touched everywhere else. The one trap paid for is the cache:
+  `ConnectionLayout` kept a curve while its two endpoints stood still, and a
+  handle moves neither, so the waypoints joined the per-curve key — the
+  caption bug from the other side. `test/waypoint_test.dart` pins all of it,
+  and `context_menu_test.dart` the three menu rows.
+
 ### A drag held against the edge scrolls the canvas
 
 - `NodeEditor.edgeScroll` (`EdgeScrollConfig?`, `const EdgeScrollConfig()`)
