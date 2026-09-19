@@ -1,35 +1,5 @@
 ## Unreleased
 
-### A drag held against the edge scrolls the canvas
-
-- `NodeEditor.edgeScroll` (`EdgeScrollConfig?`, `const EdgeScrollConfig()`)
-  — holding a wire, a node or a group against the side of the viewport pans
-  the camera toward that side, so a target off screen can be reached without
-  letting go to zoom out first. The legacy editor had it and the port to v2
-  lost it; a wire that could only be landed after a zoom-out was the
-  complaint. `null` turns it off. The marquee and the corner grip are not
-  scrolled.
-
-  `EdgeScrollConfig.margin` (40) is how far in from each edge the zone
-  reaches and `speed` (600) how fast the canvas moves at the edge, both in
-  *screen* pixels so the feel does not change with the zoom. The pull ramps
-  linearly from nothing at the inner boundary to `speed` at the edge and holds
-  there beyond it, so a pointer dragged clean out of the window scrolls at
-  full speed. `velocityAt` is the arithmetic, on the config so it is testable
-  without a widget.
-
-  It runs on a `Ticker`, not a timer: muted with the widget's `TickerMode`,
-  stopped by the frame clock in tests, and stepped by elapsed time so `speed`
-  is a per-second figure rather than a per-frame one. After each step the
-  drag is re-applied at the pointer that has not moved, which is what keeps
-  the held node under the cursor and the wire's end on it while the scene
-  moves underneath. That needed the node drag's delta to move from screen
-  space to scene space — `toScene(pointer) - origin` — which also puts a
-  wheel-zoom mid-drag right for free. `test/edge_scroll_test.dart` pins the
-  ramp, a node and a group carried by the scroll, a wire reaching a node
-  that started off screen, and that the scroll stops with the pointer
-  leaving the margin, the drag ending, Escape, or `edgeScroll: null`.
-
 ### A node body can see its own wiring
 
 - `NodeRenderState.connectedPorts` (`Set<String>`, `const {}`) — which of this

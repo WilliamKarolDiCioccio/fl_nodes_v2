@@ -651,7 +651,6 @@ light from the ambient `Theme` brightness.
 | Drag port → port | Create a connection |
 | Drag port → node body | Connect to that node's first compatible port |
 | Drag port → empty canvas | `onConnectionDropped`, or Create ▸ with `createOnDrop` |
-| Hold a drag against the edge | Scroll the canvas that way — `edgeScroll`, off with `null` |
 | Click connection | Select it |
 | Drag a comment's padding | Move it — the text field takes any press on itself |
 | Drag a group's handle | Move every node in it |
