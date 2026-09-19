@@ -206,6 +206,11 @@ void main() {
           NodeMenuConnectionTarget(
             controller.graph.connections[id]!,
             Offset.zero,
+            insertion: const RoutePoint(
+              index: 0,
+              position: Offset(200, 100),
+              distance: 0,
+            ),
           ),
         ),
       );
@@ -214,12 +219,97 @@ void main() {
         'Go to source',
         'Go to destination',
         '---',
+        'Add waypoint here',
+        'Clear waypoints',
+        '---',
+        'Delete',
+      ]);
+      expect(
+        labels(entries.where((e) => !e.isSeparator && !e.isEnabled).toList()),
+        <String>['Clear waypoints'],
+        reason: 'nothing to clear on a wire that has no waypoints yet',
+      );
+
+      entries.firstWhere((e) => e.label == 'Add waypoint here').onSelected!();
+      expect(
+        controller.graph.connections[id]!.waypoints,
+        <Offset>[const Offset(200, 100)],
+        reason: 'the entry adds the point the editor said it would',
+      );
+    });
+
+    test('adding needs the editor to have said where', () {
+      final controller = boot();
+      final id = controller.connect(
+        const PortRef('a', 'out'),
+        const PortRef('b', 'in'),
+      )!;
+      final entries = menus.entriesFor(
+        request(
+          controller,
+          NodeMenuConnectionTarget(
+            controller.graph.connections[id]!,
+            Offset.zero,
+          ),
+        ),
+      );
+      expect(
+        entries.firstWhere((e) => e.label == 'Add waypoint here').isEnabled,
+        isFalse,
+      );
+    });
+
+    test('on a handle the menu is about that handle', () {
+      final controller = boot();
+      final id = controller.connect(
+        const PortRef('a', 'out'),
+        const PortRef('b', 'in'),
+      )!;
+      controller.setConnectionWaypoints(id, const <Offset>[
+        Offset(200, 50),
+        Offset(260, 150),
+      ]);
+
+      final entries = menus.entriesFor(
+        request(
+          controller,
+          NodeMenuConnectionTarget(
+            controller.graph.connections[id]!,
+            Offset.zero,
+            waypoint: 1,
+          ),
+        ),
+      );
+      expect(labels(entries), <String>[
+        'Go to source',
+        'Go to destination',
+        '---',
+        'Remove waypoint',
+        'Clear waypoints',
+        '---',
         'Delete',
       ]);
       expect(
         entries.where((entry) => !entry.isSeparator).every((e) => e.isEnabled),
         isTrue,
       );
+
+      entries.firstWhere((e) => e.label == 'Remove waypoint').onSelected!();
+      expect(controller.graph.connections[id]!.waypoints, <Offset>[
+        const Offset(200, 50),
+      ]);
+
+      final again = menus.entriesFor(
+        request(
+          controller,
+          NodeMenuConnectionTarget(
+            controller.graph.connections[id]!,
+            Offset.zero,
+          ),
+        ),
+      );
+      again.firstWhere((e) => e.label == 'Clear waypoints').onSelected!();
+      expect(controller.graph.connections[id]!.waypoints, isEmpty);
     });
 
     test('navigation is disabled on a self-connection', () {

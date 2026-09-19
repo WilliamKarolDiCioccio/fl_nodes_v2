@@ -26,6 +26,10 @@ enum GraphEditKind {
   /// A connection's caption changed; the wire itself did not.
   labelConnection,
 
+  /// A connection's waypoints changed — one added, moved or removed, or all
+  /// of them cleared. Where the wire runs, not what it joins.
+  routeConnection,
+
   /// A group was made, disbanded, renamed or recoloured.
   group,
 
