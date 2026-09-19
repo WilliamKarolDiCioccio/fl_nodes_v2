@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controller/node_editor_controller.dart';
+import '../geometry/connection_path.dart';
 import '../geometry/viewport_transform.dart';
 import '../model/graph_node.dart';
 import '../model/node_comment.dart';
@@ -168,7 +169,7 @@ class NodeEditor extends StatefulWidget {
 /// [blocked] is a press that must not become a drag at all — a secondary
 /// press, which opens a menu instead. It needs its own state rather than
 /// simply staying [none], because [none] falls through to panning.
-enum _CanvasGesture { none, pan, marquee, port, blocked }
+enum _CanvasGesture { none, pan, marquee, port, waypoint, blocked }
 
 class NodeEditorState extends State<NodeEditor> {
   final GlobalKey _canvasKey = GlobalKey();
@@ -274,6 +275,14 @@ class NodeEditorState extends State<NodeEditor> {
 
   String? _hoveredConnectionId;
   PortRef? _hoveredPort;
+  WaypointRef? _hoveredWaypoint;
+
+  /// The handle being dragged along its wire, for the length of the press.
+  WaypointRef? _draggingWaypoint;
+
+  /// The last primary tap on the canvas, for the double tap the canvas
+  /// synthesises itself — see [_handleCanvasTapUp].
+  ({DateTime at, Offset local})? _lastCanvasTap;
 
   Size _viewportSize = Size.zero;
 
@@ -392,6 +401,48 @@ class NodeEditorState extends State<NodeEditor> {
   GraphNode? _nodeAt(Offset scenePoint) =>
       _controller.layout.nodeAt(scenePoint);
 
+  /// The waypoint handle under [scenePoint], or null.
+  ///
+  /// Gated on the zoom the painter draws handles at, for the reason ports
+  /// are: a handle too small to see must not be grabbable. The index narrows
+  /// it to the wires whose bounds reach the pointer, and a handle sits on
+  /// its wire, so those are the only wires that can have one there.
+  WaypointRef? _waypointAt(Offset scenePoint) {
+    if (_viewport.scale < ConnectionLabel.detailScaleThreshold) return null;
+    final radius = _theme.waypointHitRadius / _viewport.scale;
+    WaypointRef? best;
+    var bestDistance = radius;
+    final probe = Rect.fromCircle(center: scenePoint, radius: radius);
+    for (final entry in _connections.entriesIn(probe)) {
+      final waypoints = entry.value.connection.waypoints;
+      for (final (index, point) in waypoints.indexed) {
+        final distance = (point - scenePoint).distance;
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          best = (connectionId: entry.key, index: index);
+        }
+      }
+    }
+    return best;
+  }
+
+  /// Where a waypoint dropped at [scenePoint] would land on [connectionId]:
+  /// the nearest point of the curve as drawn, and its place in the run.
+  RoutePoint? _routePointOn(String connectionId, Offset scenePoint) {
+    final geometry = _connections[connectionId];
+    if (geometry == null) return null;
+    final ends = geometry.endpoints;
+    return ConnectionPath.nearestOnRoute(
+      scenePoint,
+      from: ends.from,
+      to: ends.to,
+      fromSide: ends.fromSide,
+      toSide: ends.toSide,
+      via: geometry.connection.waypoints,
+      curvature: _theme.connectionCurvature,
+    );
+  }
+
   /// Where a connection dragged from [source] would land, if anywhere.
   ///
   /// Falls back to the first compatible port of the node under the pointer, so
@@ -457,6 +508,15 @@ class NodeEditorState extends State<NodeEditor> {
       return;
     }
 
+    final waypoint = _waypointAt(
+      _viewport.toScene(_pointerDownPosition ?? details.localFocalPoint),
+    );
+    if (waypoint != null && details.pointerCount == 1) {
+      _canvasGesture = _CanvasGesture.waypoint;
+      _handleWaypointDragStart(waypoint);
+      return;
+    }
+
     final keyboard = HardwareKeyboard.instance;
     final marqueeIsDefault =
         widget.canvasDragBehavior == CanvasDragBehavior.marquee;
@@ -499,6 +559,10 @@ class NodeEditorState extends State<NodeEditor> {
     if (_canvasGesture == _CanvasGesture.blocked) return;
     if (_canvasGesture == _CanvasGesture.port) {
       _handlePortDragUpdate(_viewport.toScene(details.localFocalPoint));
+      return;
+    }
+    if (_canvasGesture == _CanvasGesture.waypoint) {
+      _handleWaypointDragUpdate(_viewport.toScene(details.localFocalPoint));
       return;
     }
     if (_canvasGesture == _CanvasGesture.marquee) {
@@ -548,6 +612,11 @@ class NodeEditorState extends State<NodeEditor> {
     if (_canvasGesture == _CanvasGesture.port) {
       _canvasGesture = _CanvasGesture.none;
       _handlePortDragEnd();
+      return;
+    }
+    if (_canvasGesture == _CanvasGesture.waypoint) {
+      _canvasGesture = _CanvasGesture.none;
+      _handleWaypointDragEnd();
       return;
     }
     // Selection was already applied live; ending only clears the overlay.
@@ -633,6 +702,36 @@ class NodeEditorState extends State<NodeEditor> {
     // whatever the host had focused before and deletes something else.
     _focusNode.requestFocus();
 
+    // Synthesised here for the reason `NodeView` gives: a
+    // `DoubleTapGestureRecognizer` in the arena would hold every canvas tap
+    // for the timeout, and a click that selected a wire a beat late would
+    // read as a miss. Only counted at the same spot — two clicks on two
+    // wires are two clicks.
+    final now = DateTime.now();
+    final previous = _lastCanvasTap;
+    final doubled =
+        previous != null &&
+        now.difference(previous.at) <= kDoubleTapTimeout &&
+        (previous.local - details.localPosition).distance <= kDoubleTapSlop;
+    _lastCanvasTap = doubled ? null : (at: now, local: details.localPosition);
+
+    final scene = _viewport.toScene(details.localPosition);
+
+    // A handle before its wire, or the wire would take every tap on one.
+    // Double-clicked, it goes; single-clicked, its wire is selected.
+    final waypoint = _waypointAt(scene);
+    if (waypoint != null) {
+      if (doubled) {
+        _controller.removeWaypoint(waypoint.connectionId, waypoint.index);
+      } else {
+        _controller.selection.selectConnection(
+          waypoint.connectionId,
+          additive: _additivePressed,
+        );
+      }
+      return;
+    }
+
     // Before the curve test: a caption sits on its curve's midpoint, so the
     // curve would otherwise swallow every tap meant for the text.
     final caption = _editableCaptionAt(details.localPosition);
@@ -641,17 +740,21 @@ class NodeEditorState extends State<NodeEditor> {
       return;
     }
 
-    final hit = _connections.hitTest(
-      _viewport.toScene(details.localPosition),
-      tolerance: _connectionTolerance,
-    );
+    final hit = _connections.hitTest(scene, tolerance: _connectionTolerance);
     if (hit != null) {
       _controller.selection.selectConnection(hit, additive: _additivePressed);
+      // Double-clicked, a wire takes a waypoint where it was clicked — on
+      // the curve, not at the pointer, so the wire does not visibly jump to
+      // meet a point a few pixels off it.
+      if (doubled) {
+        final at = _routePointOn(hit, scene);
+        if (at != null) _controller.insertWaypoint(hit, at.index, at.position);
+      }
       widget.onConnectionTap?.call(_controller.graph.connections[hit]!);
       return;
     }
     if (!_additivePressed) _controller.selection.clear();
-    widget.onCanvasTap?.call(_viewport.toScene(details.localPosition));
+    widget.onCanvasTap?.call(scene);
   }
 
   void _handlePointerSignal(PointerSignalEvent event) {
@@ -695,15 +798,22 @@ class NodeEditorState extends State<NodeEditor> {
     final scene = _viewport.toScene(event.localPosition);
 
     // A painted handle has no MouseRegion of its own, so its hover state is
-    // picked here alongside the connections'.
+    // picked here alongside the connections'. Port, then waypoint, then
+    // wire: the order every press uses.
     final port = _portAt(scene);
-    final hit = port != null
+    final waypoint = port != null ? null : _waypointAt(scene);
+    final hit = port != null || waypoint != null
         ? null
         : _connections.hitTest(scene, tolerance: _connectionTolerance);
-    if (hit == _hoveredConnectionId && port == _hoveredPort) return;
+    if (hit == _hoveredConnectionId &&
+        port == _hoveredPort &&
+        waypoint == _hoveredWaypoint) {
+      return;
+    }
     setState(() {
       _hoveredConnectionId = hit;
       _hoveredPort = port;
+      _hoveredWaypoint = waypoint;
     });
   }
 
@@ -841,6 +951,35 @@ class NodeEditorState extends State<NodeEditor> {
       _nodeDragOrigin = null;
       _nodeDragStartPositions = const <String, Offset>{};
     });
+  }
+
+  // ------------------------------------------------------------ waypoints
+
+  /// Starts dragging a handle along its wire, as one undo step.
+  ///
+  /// The wire is selected on the way, as a node is by a drag: the handle is
+  /// the wire's, and what the drag is about should be lit.
+  void _handleWaypointDragStart(WaypointRef waypoint) {
+    _controller.selection.selectConnection(waypoint.connectionId);
+    _controller.history.beginTransaction();
+    setState(() => _draggingWaypoint = waypoint);
+  }
+
+  void _handleWaypointDragUpdate(Offset scene) {
+    final waypoint = _draggingWaypoint;
+    if (waypoint == null) return;
+    _controller.moveWaypoint(
+      waypoint.connectionId,
+      waypoint.index,
+      scene,
+      snap: _theme.snapToGrid,
+    );
+  }
+
+  void _handleWaypointDragEnd() {
+    if (_draggingWaypoint == null) return;
+    _controller.history.commitTransaction();
+    setState(() => _draggingWaypoint = null);
   }
 
   // ------------------------------------------------------------- resizing
@@ -1069,10 +1208,12 @@ class NodeEditorState extends State<NodeEditor> {
       return;
     }
 
-    final connectionId = _connections.hitTest(
-      scene,
-      tolerance: _connectionTolerance,
-    );
+    // A handle is its wire's, so it gets the wire's menu with a line about
+    // the handle — and the host's wire hook, which is told about the wire.
+    final waypoint = _waypointAt(scene);
+    final connectionId =
+        waypoint?.connectionId ??
+        _connections.hitTest(scene, tolerance: _connectionTolerance);
     final connection = connectionId == null
         ? null
         : _controller.graph.connections[connectionId];
@@ -1082,7 +1223,17 @@ class NodeEditorState extends State<NodeEditor> {
         return;
       }
       _controller.selection.selectConnection(connection.id);
-      _openMenu(NodeMenuConnectionTarget(connection, scene), globalPosition);
+      _openMenu(
+        NodeMenuConnectionTarget(
+          connection,
+          scene,
+          waypoint: waypoint?.index,
+          insertion: waypoint == null
+              ? _routePointOn(connection.id, scene)
+              : null,
+        ),
+        globalPosition,
+      );
       return;
     }
 
@@ -1424,10 +1575,13 @@ class NodeEditorState extends State<NodeEditor> {
           onExit: (_) => setState(() {
             _hoveredConnectionId = null;
             _hoveredPort = null;
+            _hoveredWaypoint = null;
           }),
           cursor: switch (_canvasGesture) {
             _CanvasGesture.pan => SystemMouseCursors.grabbing,
+            _CanvasGesture.waypoint => SystemMouseCursors.grabbing,
             _ when _hoveredPort != null => SystemMouseCursors.precise,
+            _ when _hoveredWaypoint != null => SystemMouseCursors.grab,
             _ => MouseCursor.defer,
           },
           child: ClipRect(
@@ -1456,6 +1610,7 @@ class NodeEditorState extends State<NodeEditor> {
                       selectedIds: _controller.selection.connectionIds,
                       selectionRevision: _controller.selection.revision,
                       hoveredId: _hoveredConnectionId,
+                      hoveredWaypoint: _hoveredWaypoint,
                       labelStyle: _labelStyle(),
                       prototypes: _controller.prototypes,
                     ),

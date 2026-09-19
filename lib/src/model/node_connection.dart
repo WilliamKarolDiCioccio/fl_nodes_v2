@@ -5,6 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'payload_equality.dart';
 import 'port_ref.dart';
 
+/// One waypoint of one connection: which wire, and which of its points.
+typedef WaypointRef = ({String connectionId, int index});
+
 /// A directed edge between an output port and an input port.
 @immutable
 class NodeConnection {
@@ -16,6 +19,7 @@ class NodeConnection {
     this.label,
     this.color,
     this.data,
+    this.waypoints = const <Offset>[],
   });
 
   final String id;
@@ -38,6 +42,14 @@ class NodeConnection {
   /// Arbitrary payload for the host application.
   final Object? data;
 
+  /// Scene points the wire is routed through, in order from [from] to [to].
+  ///
+  /// Not bezier control points: these sit *on* the wire, where the user put
+  /// them, and the curve's own control points are solved from them. Empty for
+  /// the plain curve between the two ports. Nothing but the drawing reads
+  /// them — the runner does not know they exist.
+  final List<Offset> waypoints;
+
   bool touches(String nodeId) => from.nodeId == nodeId || to.nodeId == nodeId;
 
   bool touchesPort(PortRef port) => from == port || to == port;
@@ -50,6 +62,7 @@ class NodeConnection {
     String? label,
     Color? color,
     Object? data,
+    List<Offset>? waypoints,
   }) {
     return NodeConnection(
       id: id ?? this.id,
@@ -59,6 +72,7 @@ class NodeConnection {
       label: label ?? this.label,
       color: color ?? this.color,
       data: data ?? this.data,
+      waypoints: waypoints ?? this.waypoints,
     );
   }
 
@@ -72,11 +86,20 @@ class NodeConnection {
           other.type == type &&
           other.label == label &&
           other.color == color &&
-          payloadEquals(other.data, data);
+          payloadEquals(other.data, data) &&
+          listEquals(other.waypoints, waypoints);
 
   @override
-  int get hashCode =>
-      Object.hash(id, from, to, type, label, color, payloadHash(data));
+  int get hashCode => Object.hash(
+    id,
+    from,
+    to,
+    type,
+    label,
+    color,
+    payloadHash(data),
+    Object.hashAll(waypoints),
+  );
 
   /// Returns a copy captioned [label], or uncaptioned when null.
   ///
@@ -90,6 +113,7 @@ class NodeConnection {
     label: label,
     color: color,
     data: data,
+    waypoints: waypoints,
   );
 
   @override

@@ -51,7 +51,8 @@ export 'src/controller/node_editor_controller.dart'
         NodeEditorSelection,
         NodeRunState;
 export 'src/collections/spatial_hash_grid.dart' show SpatialHashGrid;
-export 'src/geometry/connection_path.dart' show ConnectionPath, PathArrow;
+export 'src/geometry/connection_path.dart'
+    show ConnectionPath, CubicSegment, PathArrow, RoutePoint;
 export 'src/geometry/connection_router.dart'
     show ConnectionEndpoints, ConnectionRouter;
 export 'src/geometry/node_geometry.dart' show NodeGeometry;
@@ -59,7 +60,7 @@ export 'src/geometry/viewport_transform.dart' show ViewportTransform;
 export 'src/model/graph_emphasis.dart' show GraphEmphasis;
 export 'src/model/graph_node.dart' show GraphNode;
 export 'src/model/node_comment.dart' show NodeComment;
-export 'src/model/node_connection.dart' show NodeConnection;
+export 'src/model/node_connection.dart' show NodeConnection, WaypointRef;
 export 'src/model/node_group.dart' show NodeGroup;
 export 'src/model/node_graph.dart' show NodeGraph;
 export 'src/model/node_port.dart'

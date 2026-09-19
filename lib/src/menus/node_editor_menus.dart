@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../controller/node_editor_controller.dart';
+import '../geometry/connection_path.dart' show RoutePoint;
 import '../model/graph_node.dart';
 import '../model/node_connection.dart';
 import '../model/node_group.dart';
@@ -28,8 +29,24 @@ final class NodeMenuPortTarget extends NodeMenuTarget {
 }
 
 final class NodeMenuConnectionTarget extends NodeMenuTarget {
-  const NodeMenuConnectionTarget(this.connection, super.scenePosition);
+  const NodeMenuConnectionTarget(
+    this.connection,
+    super.scenePosition, {
+    this.waypoint,
+    this.insertion,
+  });
+
   final NodeConnection connection;
+
+  /// The index of the waypoint the click landed on, or null for the wire
+  /// itself. A handle is part of its wire rather than a target of its own,
+  /// so the menu is the wire's with a line about the handle.
+  final int? waypoint;
+
+  /// Where a waypoint added from this menu would go: the nearest point on
+  /// the curve as drawn, which only the editor can answer since the curve
+  /// depends on the theme. Null when the click was on a handle.
+  final RoutePoint? insertion;
 }
 
 final class NodeMenuGroupTarget extends NodeMenuTarget {
@@ -309,6 +326,10 @@ class NodeEditorMenus {
     // the same place.
     final loops = connection.from.nodeId == connection.to.nodeId;
 
+    final target = request.target as NodeMenuConnectionTarget;
+    final waypoint = target.waypoint;
+    final insertion = target.insertion;
+
     return <NodeMenuEntry>[
       NodeMenuEntry(
         label: 'Go to source',
@@ -319,6 +340,37 @@ class NodeEditorMenus {
         label: 'Go to destination',
         icon: Icons.arrow_forward,
         onSelected: loops ? null : () => goTo(connection.to.nodeId),
+      ),
+      const NodeMenuEntry.separator(),
+      // On a handle the line is about that handle; on the wire it is about
+      // the place clicked. Either way the third line clears the route.
+      if (waypoint != null)
+        NodeMenuEntry(
+          label: 'Remove waypoint',
+          icon: Icons.remove_circle_outline,
+          onSelected: () => controller.removeWaypoint(connection.id, waypoint),
+        )
+      else
+        NodeMenuEntry(
+          label: 'Add waypoint here',
+          icon: Icons.add_circle_outline,
+          onSelected: insertion == null
+              ? null
+              : () => controller.insertWaypoint(
+                  connection.id,
+                  insertion.index,
+                  insertion.position,
+                ),
+        ),
+      NodeMenuEntry(
+        label: 'Clear waypoints',
+        icon: Icons.linear_scale,
+        onSelected: connection.waypoints.isEmpty
+            ? null
+            : () => controller.setConnectionWaypoints(
+                connection.id,
+                const <Offset>[],
+              ),
       ),
       const NodeMenuEntry.separator(),
       NodeMenuEntry(

@@ -222,6 +222,17 @@ class NodeGraph {
     Map<String, NodeConnection>.of(connections)..[connection.id] = connection,
   );
 
+  /// Adds or replaces several connections in one copy.
+  NodeGraph putConnections(Iterable<NodeConnection> updated) {
+    final next = Map<String, NodeConnection>.of(connections);
+    var changed = false;
+    for (final connection in updated) {
+      next[connection.id] = connection;
+      changed = true;
+    }
+    return changed ? _withConnections(next) : this;
+  }
+
   NodeGraph removeConnections(Iterable<String> ids) {
     final doomed = ids.toSet();
     if (doomed.isEmpty) return this;

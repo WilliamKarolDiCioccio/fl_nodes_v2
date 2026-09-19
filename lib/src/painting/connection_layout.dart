@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show listEquals;
+
 import '../collections/spatial_hash_grid.dart';
 import '../controller/node_editor_controller.dart';
 import '../geometry/connection_path.dart';
@@ -218,16 +220,24 @@ class ConnectionLayout {
       final caption = registry.captionOf(graph, connection);
 
       final cached = _geometry[connection.id];
-      final samePath = cached != null && cached.endpoints == ends;
+      // The waypoints are part of the key: a handle dragged along a wire
+      // moves neither of its ends, and a curve kept on the ends alone would
+      // stay put under the pointer — the caption trap again, from the other
+      // side.
+      final samePath =
+          cached != null &&
+          cached.endpoints == ends &&
+          listEquals(cached.connection.waypoints, connection.waypoints);
       if (samePath &&
           cached.caption == caption &&
           identical(cached.connection, connection)) {
         continue;
       }
 
-      // The bezier and its bounds depend on nothing but the two endpoints, and
-      // they are the expensive half by an order of magnitude: a node moving on
-      // the far side of the document leaves this curve exactly as it was.
+      // The curve and its bounds depend on nothing but the two endpoints and
+      // the waypoints, and they are the expensive half by an order of
+      // magnitude: a node moving on the far side of the document leaves this
+      // curve exactly as it was.
       final path = samePath
           ? cached.path
           : ConnectionPath.build(
@@ -235,6 +245,7 @@ class ConnectionLayout {
               ends.to,
               fromSide: ends.fromSide,
               toSide: ends.toSide,
+              via: connection.waypoints,
               curvature: curvature,
             );
       if (!samePath) _pathBuildCount++;

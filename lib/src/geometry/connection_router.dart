@@ -56,6 +56,7 @@ class ConnectionRouter {
       ends.to,
       fromSide: ends.fromSide,
       toSide: ends.toSide,
+      via: connection.waypoints,
       curvature: curvature,
     );
   }

@@ -350,20 +350,46 @@ class NodeEditorController extends ChangeNotifier {
   void moveNodes(Map<String, Offset> positions, {double snap = 0}) {
     if (positions.isEmpty) return;
     final updated = <GraphNode>[];
+    final deltas = <String, Offset>{};
     positions.forEach((id, position) {
       final node = _graph.nodes[id];
       if (node == null || !node.draggable) return;
       final target = snap > 0 ? _snap(position, snap) : position;
-      if (node.position != target) updated.add(node.copyWith(position: target));
+      if (node.position != target) {
+        updated.add(node.copyWith(position: target));
+        deltas[id] = target - node.position;
+      }
     });
     _mutate(
-      _graph.putNodes(updated),
+      _graph.putNodes(updated).putConnections(_carriedRoutes(deltas)),
       GraphEdit(
         kind: GraphEditKind.moveNodes,
         nodeIds: <String>{for (final node in updated) node.id},
       ),
       touchedNodes: updated.map((node) => node.id).toList(growable: false),
     );
+  }
+
+  /// The routed wires that travel with a move, shifted to keep their shape.
+  ///
+  /// A wire whose **both** ends are in [deltas] is being carried as a whole —
+  /// a selection dragged across the canvas — and a route left where it was
+  /// would stretch into nonsense behind it. A wire with one end moving stays
+  /// routed where it is and the curve re-solves, since the user pinned those
+  /// points to the canvas and is moving something else. The two ends' deltas
+  /// can differ by a snap, so the emitting end's is the one taken.
+  Iterable<NodeConnection> _carriedRoutes(Map<String, Offset> deltas) sync* {
+    if (deltas.isEmpty) return;
+    for (final connection in _graph.connections.values) {
+      if (connection.waypoints.isEmpty) continue;
+      final delta = deltas[connection.from.nodeId];
+      if (delta == null || !deltas.containsKey(connection.to.nodeId)) continue;
+      yield connection.copyWith(
+        waypoints: List<Offset>.unmodifiable(<Offset>[
+          for (final point in connection.waypoints) point + delta,
+        ]),
+      );
+    }
   }
 
   /// Places nodes where [arrange] says they go, in one edit.
@@ -400,12 +426,25 @@ class NodeEditorController extends ChangeNotifier {
     });
     if (updated.isEmpty) return false;
 
+    // An arrangement is a new picture, and a route drawn by hand for the old
+    // one is stale in it: the wires of every node that moved go back to the
+    // plain curve. Unlike a drag, a layout has no delta that means anything.
+    final moved = <String>{for (final node in updated) node.id};
+    final unrouted = <NodeConnection>[
+      for (final connection in _graph.connections.values)
+        if (connection.waypoints.isNotEmpty &&
+            (moved.contains(connection.from.nodeId) ||
+                moved.contains(connection.to.nodeId)))
+          connection.copyWith(waypoints: const <Offset>[]),
+    ];
+
     final before = _graph;
     _mutate(
-      _graph.putNodes(updated),
+      _graph.putNodes(updated).putConnections(unrouted),
       GraphEdit(
         kind: GraphEditKind.moveNodes,
-        nodeIds: <String>{for (final node in updated) node.id},
+        nodeIds: moved,
+        connectionIds: <String>{for (final c in unrouted) c.id},
       ),
       record: record,
       touchedNodes: updated.map((node) => node.id).toList(growable: false),
@@ -591,6 +630,73 @@ class NodeEditorController extends ChangeNotifier {
         connectionIds: <String>{id},
       ),
     );
+  }
+
+  // ------------------------------------------------------------- routing
+
+  /// Replaces a connection's [NodeConnection.waypoints] wholesale.
+  ///
+  /// The one funnel for routing: [insertWaypoint], [moveWaypoint] and
+  /// [removeWaypoint] are conveniences over it. A plain graph edit, reported
+  /// as [GraphEditKind.routeConnection], so a route undoes with `Ctrl+Z` and
+  /// a guard can refuse it. An equal list is not an edit.
+  void setConnectionWaypoints(String id, List<Offset> waypoints) {
+    final connection = _graph.connections[id];
+    if (connection == null) return;
+    if (listEquals(connection.waypoints, waypoints)) return;
+    _mutate(
+      _graph.putConnection(
+        connection.copyWith(waypoints: List<Offset>.unmodifiable(waypoints)),
+      ),
+      GraphEdit(
+        kind: GraphEditKind.routeConnection,
+        nodeIds: <String>{connection.from.nodeId, connection.to.nodeId},
+        connectionIds: <String>{id},
+      ),
+    );
+  }
+
+  /// Routes connection [id] through [point], as the [index]th waypoint.
+  ///
+  /// [index] is where in the run the point belongs — the segment it was
+  /// dropped on, which `ConnectionPath.nearestOnRoute` answers from the curve
+  /// as drawn. Clamped to the ends of the list rather than refused.
+  void insertWaypoint(String id, int index, Offset point) {
+    final connection = _graph.connections[id];
+    if (connection == null) return;
+    final at = index.clamp(0, connection.waypoints.length);
+    setConnectionWaypoints(id, <Offset>[
+      ...connection.waypoints.take(at),
+      point,
+      ...connection.waypoints.skip(at),
+    ]);
+  }
+
+  /// Moves the [index]th waypoint of connection [id] to [point], snapped to
+  /// [snap] when it is positive. Nothing happens for an index the wire does
+  /// not have.
+  void moveWaypoint(String id, int index, Offset point, {double snap = 0}) {
+    final connection = _graph.connections[id];
+    if (connection == null) return;
+    if (index < 0 || index >= connection.waypoints.length) return;
+    final target = snap > 0 ? _snap(point, snap) : point;
+    if (connection.waypoints[index] == target) return;
+    setConnectionWaypoints(id, <Offset>[
+      for (final (i, existing) in connection.waypoints.indexed)
+        i == index ? target : existing,
+    ]);
+  }
+
+  /// Takes the [index]th waypoint off connection [id]. Nothing happens for
+  /// an index the wire does not have.
+  void removeWaypoint(String id, int index) {
+    final connection = _graph.connections[id];
+    if (connection == null) return;
+    if (index < 0 || index >= connection.waypoints.length) return;
+    setConnectionWaypoints(id, <Offset>[
+      for (final (i, existing) in connection.waypoints.indexed)
+        if (i != index) existing,
+    ]);
   }
 
   /// Replaces a node's [GraphNode.metadata] wholesale.
