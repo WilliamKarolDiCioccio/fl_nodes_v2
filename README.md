@@ -16,6 +16,9 @@ stay widgets and text fields, sliders, dropdowns and forms all work inside one.
 Everything *around* the nodes — connections, port handles, the grid, the
 selection overlays — is painted.
 
+**[Try it in the browser](https://williamkaroldicioccio.github.io/fl_nodes_v2/)** —
+the example below, built for the web from `master` on every push — or run it:
+
 ```sh
 cd example && flutter run
 ```
@@ -705,7 +708,9 @@ without pumping a widget.
 `example/` is a workflow editor covering every feature: seven node types, a form
 node built from real Flutter inputs, derived ports, link captions, an inspector
 panel, comments, groups, the minimap, JSON save and load, execution, and stress
-graphs up to 5000 nodes.
+graphs up to 5000 nodes. It is [live on GitHub
+Pages](https://williamkaroldicioccio.github.io/fl_nodes_v2/), rebuilt from
+`master` by `.github/workflows/demo.yml`.
 
 ```sh
 cd example && flutter run

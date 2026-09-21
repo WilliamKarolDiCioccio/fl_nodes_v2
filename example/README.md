@@ -8,6 +8,9 @@ suite on any change to `lib/`, not just on changes here.
 fvm flutter run -d linux
 ```
 
+It is also [live on GitHub Pages](https://williamkaroldicioccio.github.io/fl_nodes_v2/),
+built for the web from `master` by `../.github/workflows/demo.yml`.
+
 What it covers:
 
 - Seven node types, all registered prototypes, all creatable from the canvas
