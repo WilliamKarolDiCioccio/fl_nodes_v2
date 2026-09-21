@@ -1,0 +1,72 @@
+# The live demo: the example app, built for the web and published on GitHub
+# Pages, so that somebody weighing the package can try it without installing a
+# Flutter toolchain. It is the example as it stands on `master`, not the
+# release on pub.dev — a change merged there is on the demo minutes later.
+#
+# Pages serves the site under /<repository>/, which is why the base href is
+# set from the repository name rather than hard-coded. The Flutter version is
+# read from .fvmrc, the same pin the hooks use, so there is one place to bump.
+#
+# A pull request runs the build alone — a check that the example still
+# compiles for the web — and only a push to the default branch deploys.
+#
+# Enabling Pages is a repository setting: Settings → Pages → Source must be
+# "GitHub Actions", once, or the deploy step fails with a 404.
+name: demo
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a push that lands while one is building supersedes
+# it — the older build would only be overwritten a minute later anyway.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the pinned Flutter version
+        id: fvm
+        run: echo "version=$(jq -r .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.fvm.outputs.version }}
+          cache: true
+
+      # --wasm compiles to WebAssembly and keeps the JavaScript build as the
+      # fallback the bootstrap picks for a browser without wasm-gc. Pages sets
+      # no COOP/COEP headers, so the wasm renderer runs single-threaded; for a
+      # demo that is fine, and still faster than the JavaScript one.
+      - name: Build the example for the web
+        working-directory: example
+        run: >-
+          flutter build web --release --wasm
+          --base-href "/${{ github.event.repository.name }}/"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: example/build/web
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
