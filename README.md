@@ -23,6 +23,8 @@ the example below, built for the web from `master` on every push — or run it:
 cd example && flutter run
 ```
 
+![The example: a lead-routing workflow with a form node built from real Flutter inputs, a group, a comment, and labelled wires between typed ports](https://raw.githubusercontent.com/WilliamKarolDiCioccio/fl_nodes_v2/master/doc/screenshot.png)
+
 ## Install
 
 ```yaml
@@ -523,7 +525,7 @@ Right-click a node, a port, a wire or the canvas. Menus are built from
 | --- | --- |
 | Node | Cut, Copy, Delete, Group, Description |
 | Port | Cut links |
-| Wire | Go to source, Go to destination, Delete |
+| Wire | Go to source, Go to destination, Add waypoint here / Remove waypoint, Clear waypoints, Delete |
 | Group | Cut, Copy, Delete with contents, Disband, Rename, Colour ▸ |
 | Canvas | Center view, Reset zoom, Paste, Create ▸, Add comment, Project ▸ |
 

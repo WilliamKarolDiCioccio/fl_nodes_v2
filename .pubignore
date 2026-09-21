@@ -1,2 +1,4 @@
 # Internal notes for whoever works on the package; the README is what pub.dev shows.
 CLAUDE.md
+# The README's screenshot is fetched from GitHub, not shipped in the archive.
+doc/

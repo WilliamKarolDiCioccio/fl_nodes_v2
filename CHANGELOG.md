@@ -49,6 +49,12 @@ change lives beside the code in `CLAUDE.md`; this file only says what changed.
   (reported as `updateNodes`; an equal map is not an edit). Written to the
   document only when non-empty, without a format version bump.
 
+### Example
+
+- **The example is live** at https://williamkaroldicioccio.github.io/fl_nodes_v2/,
+  built for the web from `master` on every push. Its toolbar has the
+  curved / orthogonal toggle.
+
 ## 0.3.0
 
 The first release since 0.1.0. `0.2.0` was never published; documents stamped

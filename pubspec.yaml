@@ -2,6 +2,12 @@ name: fl_nodes_v2
 description: "A node graph editor for Flutter: pan, zoom, wire and run graphs, with ordinary Flutter widgets inside every node."
 version: 0.4.0
 repository: https://github.com/WilliamKarolDiCioccio/fl_nodes_v2
+topics:
+  - node-editor
+  - graph
+  - canvas
+  - editor
+  - ui
 platforms:
   web:
   linux:
