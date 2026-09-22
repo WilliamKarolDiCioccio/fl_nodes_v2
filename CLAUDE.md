@@ -260,6 +260,48 @@ that matters. The menu is the wire's with `waypoint`/`insertion` on
 `NodeMenuConnectionTarget` rather than a new target, so a host's `build` hook
 keeps matching what it matched.
 
+## Port shapes and port labels
+
+**A handle says what kind of pin it is by its shape**, and
+`NodeEditorTheme.controlPortShape` / `dataPortShape` are the setting — one
+choice per *kind* for the whole canvas, the way `connectionStyle` is one
+choice for every wire. The default pairs a triangle with a dot; a host that
+wants the row of identical dots this package drew before sets both to
+`PortShape.circle` and nothing else changes.
+
+`PortShape.path` builds every shape on the **circumradius**, which is what
+keeps a mixed row level and lets the hit target stay one rule for all of them
+— `NodeEditorLayout.portAt` is still a radius about the anchor. A triangle's
+*bounding box* is therefore offset towards its tip, and that is the shape
+being right rather than the shape being off-centre: the anchor is where the
+wire attaches, so the anchor is what sits on the row.
+
+**A triangle points the same way at both ends of a wire.** An input on the
+left pointing right is the flow arriving and an output on the right pointing
+right is the flow leaving, so a card reads in one direction — which is the
+only thing the shape is for. Pointing each one away from its own node was the
+first version and puts two triangles nose to nose on a single wire, saying
+nothing about which way it runs.
+
+The painter still batches by colour, but by `Path.combine` rather than by
+`addOval`, because the shapes differ per port now and a path per colour is
+still a path per colour.
+
+**`NodeEditor.portTooltip` is a callback and cannot be anything else.** A
+port's `dataType` is a tag the *host* chose — `numberList`, `assetList` — so
+the package printing it raw would show an author a spelling that appears
+nowhere else in their application. The host is asked instead, and null or
+empty means say nothing about that port, so labelling the ports worth
+labelling costs no map of the ones you skipped. It is asked on every build
+rather than cached with the hover: the answer may depend on the port's own
+state, and a stale label over a live handle is worse than one computed twice.
+
+The label is drawn by the package rather than by Material's `Tooltip`, which
+wants a widget to wrap and a pointer of its own — a handle is painted on a
+canvas with no element behind it, and its hover is already known one layer
+up. It is `IgnorePointer`ed, because a label that could be hovered would
+chase the pointer off the handle that summoned it.
+
 ## Link styles
 
 `NodeEditorTheme.connectionStyle` picks `curved` or `orthogonal` for every wire

@@ -3,6 +3,21 @@
 What a host can do with each version, newest first. The reasoning behind a
 change lives beside the code in `CLAUDE.md`; this file only says what changed.
 
+## Unreleased
+
+### Ports
+
+- **A control port and a data port are different shapes.**
+  `NodeEditorTheme.controlPortShape` and `dataPortShape` pick from
+  `PortShape.circle`, `triangle` and `diamond`, one choice per kind for the
+  whole canvas. The default is a triangle for control and a dot for data, so
+  a row reads without tracing a wire; set both to `circle` for the old
+  appearance.
+- **`NodeEditor.portTooltip` labels a handle the pointer rests on.** The
+  package asks the host what a port carries, because a `dataType` is a tag
+  the host chose and only the host knows what it is called out loud.
+  Returning null or an empty string says nothing for that port.
+
 ## 0.4.0
 
 ### Wires
