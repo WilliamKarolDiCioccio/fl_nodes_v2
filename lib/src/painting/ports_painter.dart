@@ -5,6 +5,7 @@ import '../geometry/viewport_transform.dart';
 import '../model/graph_node.dart';
 import '../model/port_ref.dart';
 import '../theme/node_editor_theme.dart';
+import 'port_shape.dart';
 
 /// Draws every port handle on screen, in one pass.
 ///
@@ -80,7 +81,7 @@ class PortsPainter extends CustomPainter {
     // so this is a couple of paths for any number of handles.
     final fills = <Color, Path>{};
     final strokes = <Color, Path>{};
-    final active = <Offset>[];
+    final active = <(Offset, PortShape)>[];
 
     final focus = lifted;
     for (final node in nodes) {
@@ -94,20 +95,26 @@ class PortsPainter extends CustomPainter {
         final base = port.color ?? theme.portColor;
         final ref = PortRef(node.id, port.id);
         if (ref == hovered || ref == highlighted) {
-          active.add(centre);
+          active.add((centre, theme.shapeOf(port.kind)));
           continue;
         }
         final filled = connected?.contains(port.id) ?? false;
-        (fills[filled ? base : theme.background] ??= Path())
-          ..addOval(Rect.fromCircle(center: centre, radius: radius))
-          ..close();
+        // Every shape is built on the same circumradius, so a row of mixed
+        // shapes lines up and the hit target stays one rule for all of them
+        // (`NodeEditorLayout.portAt` is still a radius).
+        final shape = theme.shapeOf(port.kind);
+        fills[filled ? base : theme.background] = Path.combine(
+          PathOperation.union,
+          fills[filled ? base : theme.background] ?? Path(),
+          shape.path(centre, radius),
+        );
         // Stroked on the centre line, inset by half the width, so the drawn
         // outer edge lands on `radius` the way a border inside a box does.
-        (strokes[base] ??= Path())
-          ..addOval(
-            Rect.fromCircle(center: centre, radius: radius - border / 2),
-          )
-          ..close();
+        strokes[base] = Path.combine(
+          PathOperation.union,
+          strokes[base] ?? Path(),
+          shape.path(centre, radius - border / 2),
+        );
       }
     }
 
@@ -131,8 +138,11 @@ class PortsPainter extends CustomPainter {
     // Drawn last and larger, so the handle being aimed at reads on top of its
     // neighbours rather than under whichever node happens to paint later.
     final grown = radius * 1.3;
-    for (final centre in active) {
-      canvas.drawCircle(centre, grown, Paint()..color = theme.portHoverColor);
+    for (final (centre, shape) in active) {
+      canvas.drawPath(
+        shape.path(centre, grown),
+        Paint()..color = theme.portHoverColor,
+      );
     }
 
     canvas.restore();

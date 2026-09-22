@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../geometry/connection_path.dart' show ConnectionStyle;
+import '../model/node_port.dart' show PortKind;
+import '../painting/port_shape.dart' show PortShape;
 
 /// Visual configuration for the canvas chrome: grid, connections, ports,
 /// selection affordances and zoom limits.
@@ -34,6 +36,8 @@ class NodeEditorTheme {
     this.connectionStub = 24,
     this.connectionCornerRadius = 8,
     this.waypointAlignSnap = 6,
+    this.controlPortShape = PortShape.triangle,
+    this.dataPortShape = PortShape.circle,
     this.portRadius = 6,
     this.portHitRadius = 11,
     this.portMinScale = 0.25,
@@ -127,6 +131,23 @@ class NodeEditorTheme {
   /// How far an orthogonal wire runs straight out of a port before it may
   /// turn, in scene units.
   final double connectionStub;
+
+  /// What a control handle and a data handle are drawn as.
+  ///
+  /// Two shapes rather than one, because the two pins do different jobs and a
+  /// reader should be able to tell which is which without tracing a wire —
+  /// the same argument the port *colour* already makes, one step louder. The
+  /// default pairs a triangle with a dot; a host that wants the old row of
+  /// identical dots sets both to [PortShape.circle].
+  ///
+  /// Per kind and not per port: which shape reads as which kind is a question
+  /// about the canvas, the way [connectionStyle] is.
+  final PortShape controlPortShape;
+  final PortShape dataPortShape;
+
+  /// The shape [kind] is drawn as under this theme.
+  PortShape shapeOf(PortKind kind) =>
+      kind == PortKind.control ? controlPortShape : dataPortShape;
 
   /// The radius of an orthogonal wire's corners, in scene units.
   final double connectionCornerRadius;
@@ -242,6 +263,8 @@ class NodeEditorTheme {
     double? selectedConnectionWidth,
     double? connectionCurvature,
     ConnectionStyle? connectionStyle,
+    PortShape? controlPortShape,
+    PortShape? dataPortShape,
     double? connectionStub,
     double? connectionCornerRadius,
     double? waypointAlignSnap,
@@ -290,6 +313,8 @@ class NodeEditorTheme {
           selectedConnectionWidth ?? this.selectedConnectionWidth,
       connectionCurvature: connectionCurvature ?? this.connectionCurvature,
       connectionStyle: connectionStyle ?? this.connectionStyle,
+      controlPortShape: controlPortShape ?? this.controlPortShape,
+      dataPortShape: dataPortShape ?? this.dataPortShape,
       connectionStub: connectionStub ?? this.connectionStub,
       connectionCornerRadius:
           connectionCornerRadius ?? this.connectionCornerRadius,
@@ -341,6 +366,8 @@ class NodeEditorTheme {
     selectedConnectionWidth,
     connectionCurvature,
     connectionStyle,
+    controlPortShape,
+    dataPortShape,
     connectionStub,
     connectionCornerRadius,
     waypointAlignSnap,

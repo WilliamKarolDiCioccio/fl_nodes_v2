@@ -141,6 +141,7 @@ export 'src/painting/connection_layout.dart'
 export 'src/painting/connections_painter.dart' show ConnectionsPainter;
 export 'src/painting/emphasis_painter.dart' show EmphasisPainter;
 export 'src/painting/grid_painter.dart' show GridPainter;
+export 'src/painting/port_shape.dart' show PortShape;
 export 'src/painting/grid_shader.dart' show GridShader;
 export 'src/painting/ports_painter.dart' show PortsPainter;
 export 'src/painting/overlay_painter.dart'

@@ -11,6 +11,7 @@ import '../controller/node_editor_controller.dart';
 import '../geometry/connection_path.dart';
 import '../geometry/viewport_transform.dart';
 import '../model/graph_node.dart';
+import '../model/node_port.dart';
 import '../model/node_comment.dart';
 import '../model/node_connection.dart';
 import '../model/node_group.dart';
@@ -84,6 +85,7 @@ class NodeEditor extends StatefulWidget {
     this.onCanvasTap,
     this.onCanvasSecondaryTap,
     this.onPortSecondaryTap,
+    this.portTooltip,
     this.onConnectionSecondaryTap,
     this.contextMenus = const NodeEditorMenus(),
     this.edgeScroll = const EdgeScrollConfig(),
@@ -138,6 +140,20 @@ class NodeEditor extends StatefulWidget {
   onCanvasSecondaryTap;
 
   final void Function(PortRef port, Offset globalPosition)? onPortSecondaryTap;
+
+  /// What to say about a port the pointer has come to rest on, or null for
+  /// nothing.
+  ///
+  /// **The package cannot write this sentence itself**, which is the whole
+  /// reason it is a callback. A port's `dataType` is a tag the *host* chose —
+  /// `numberList`, `assetList` — and printing it raw would show an author a
+  /// spelling that appears nowhere else in their application. The host knows
+  /// what its own tags are called out loud; this asks it.
+  ///
+  /// Returning null or an empty string for a port shows nothing for that one,
+  /// so a host can label the ports worth labelling and leave the obvious ones
+  /// alone.
+  final String? Function(GraphNode node, NodePort port)? portTooltip;
   final void Function(NodeConnection connection, Offset globalPosition)?
   onConnectionSecondaryTap;
 
@@ -861,6 +877,25 @@ class NodeEditorState extends State<NodeEditor>
       _hoveredPort = port;
       _hoveredWaypoint = waypoint;
     });
+  }
+
+  /// What to show over the hovered handle, or null for nothing.
+  ///
+  /// Asked on every build rather than cached with the hover: the answer is the
+  /// host's and may depend on the port's own state, and a stale label over a
+  /// live handle is worse than one computed twice.
+  _PortTip? _portTooltip(ViewportTransform viewport) {
+    final ask = widget.portTooltip;
+    final ref = _hoveredPort;
+    if (ask == null || ref == null) return null;
+    final node = _controller.graph.nodes[ref.nodeId];
+    final port = node?.portById(ref.portId);
+    if (node == null || port == null) return null;
+    final text = ask(node, port);
+    if (text == null || text.isEmpty) return null;
+    final centre = _controller.layout.portPosition(ref);
+    if (centre == null) return null;
+    return _PortTip(viewport.toScreen(centre), text);
   }
 
   // --------------------------------------------------------- node gestures
@@ -1811,6 +1846,20 @@ class NodeEditorState extends State<NodeEditor>
                     size: size,
                   ),
                 ),
+                // Above the nodes and below the menu host, and pointerless:
+                // a label that could be hovered would chase the pointer off
+                // the handle that summoned it.
+                if (_portTooltip(viewport) case final _PortTip tip)
+                  Positioned(
+                    left: tip.at.dx,
+                    top: tip.at.dy,
+                    child: FractionalTranslation(
+                      // Centred over the handle and clear of it, so it never
+                      // covers the thing being pointed at.
+                      translation: const Offset(-0.5, -1.25),
+                      child: IgnorePointer(child: _PortTooltip(text: tip.text)),
+                    ),
+                  ),
                 // Last, so its zero-sized anchor sits above the layers the
                 // menu opens over. The menu itself renders in an overlay.
                 NodeEditorMenuHost(
@@ -2209,6 +2258,48 @@ class _MinimapSlot {
       // The held tear-off, never a closure read per build.
       onMenuClosed: editor._requestCanvasFocus,
       onRectChanged: editor._setMinimapRect,
+    );
+  }
+}
+
+/// Where a port's label goes and what it says.
+class _PortTip {
+  const _PortTip(this.at, this.text);
+
+  final Offset at;
+  final String text;
+}
+
+/// A port's label: the house shape of a tooltip, drawn by the package rather
+/// than by Material's [Tooltip].
+///
+/// Material's wants a widget to wrap and a pointer of its own, and a handle is
+/// neither — it is painted on a canvas with no element behind it, and its
+/// hover is already known one layer up. So this is the label alone, placed by
+/// the caller.
+class _PortTooltip extends StatelessWidget {
+  const _PortTooltip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.inverseSurface,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          text,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onInverseSurface,
+          ),
+        ),
+      ),
     );
   }
 }
