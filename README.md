@@ -27,7 +27,7 @@ cd example && flutter run
 
 ```yaml
 dependencies:
-  fl_nodes_v2: ^0.4.0
+  fl_nodes_v2: ^0.5.0
 ```
 
 ```dart
@@ -207,6 +207,23 @@ one rule for both, because a dot too small to see is also too small to aim at.
 
 The trade is that a host cannot supply its own handle widget; style them through
 the theme and `NodePort.color`.
+
+A handle's **shape** is the theme's too, one per kind:
+`controlPortShape` and `dataPortShape` pick from `PortShape.circle`,
+`triangle` and `diamond`, so a control pin and a data pin can be told apart
+without tracing a wire. The default pairs a triangle with a dot; set both to
+`circle` for the row of identical dots this package drew before 0.5.0.
+
+`NodeEditor.portTooltip` labels the handle the pointer rests on. It is asked
+of the host rather than worked out here, because a `dataType` is a tag the
+host chose and only the host knows what it is called out loud:
+
+```dart
+portTooltip: (node, port) => port.dataType ?? 'anything',
+```
+
+Returning null or an empty string says nothing for that port, so you can
+label the ones worth labelling and leave the rest alone.
 
 ### Connection rules
 

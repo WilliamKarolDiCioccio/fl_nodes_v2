@@ -3,7 +3,7 @@
 What a host can do with each version, newest first. The reasoning behind a
 change lives beside the code in `CLAUDE.md`; this file only says what changed.
 
-## Unreleased
+## 0.5.0
 
 ### Ports
 

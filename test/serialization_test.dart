@@ -963,7 +963,7 @@ void main() {
       const once = <String, Object?>{
         'version': 1,
         'schema': 9,
-        'package': 'fl_nodes_v2/0.4.0',
+        'package': 'fl_nodes_v2/0.5.0',
         'nodes': <Object?>[],
         'connections': <Object?>[],
       };
