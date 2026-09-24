@@ -181,16 +181,24 @@ void main() {
       ]);
     });
 
-    test('move snaps when asked; remove ignores an index it has not got', () {
+    test('move takes the point as given; remove ignores an index it has not '
+        'got', () {
       final controller = boot(waypoints: const <Offset>[Offset(200, 50)]);
-      controller.moveWaypoint('ab', 0, const Offset(213, 58), snap: 10);
-      expect(controller.graph.connections['ab']!.waypoints, const <Offset>[
-        Offset(210, 60),
-      ]);
+      controller.snapToGrid = true;
+      controller.reportGridStep(10);
+      controller.moveWaypoint('ab', 0, const Offset(213, 58));
+      expect(
+        controller.graph.connections['ab']!.waypoints,
+        const <Offset>[Offset(213, 58)],
+        reason:
+            'the grid does not reach a waypoint through the controller: where '
+            'a handle belongs depends on the connection style, which only the '
+            'editor can see',
+      );
       controller.moveWaypoint('ab', 3, Offset.zero);
       controller.removeWaypoint('ab', 3);
       expect(controller.graph.connections['ab']!.waypoints, const <Offset>[
-        Offset(210, 60),
+        Offset(213, 58),
       ]);
       controller.removeWaypoint('ab', 0);
       expect(controller.graph.connections['ab']!.waypoints, isEmpty);

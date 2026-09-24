@@ -183,7 +183,9 @@ Nodes declare a `width`. `height` is optional:
   provisional.
 
 A prototype with `resizable: true` gets a grip in the node's bottom-right
-corner, bounded by `minWidth`, `maxWidth` and `maxHeight`. The width dragged is
+corner, bounded by `minWidth`, `maxWidth` and `maxHeight`; with snapping on it
+is the dragged *edge* that is pulled onto a grid line, before those limits are
+applied. The width dragged is
 the node's own; the height is a floor under whatever the content needs, and
 dragging back to the natural height clears it. The ports do not move: an anchor
 is a fraction of the *declared* height, so a wire lands on the same row however
@@ -270,7 +272,8 @@ fit and clamped to `1..connectionArrowMaxCount` (4).
 ports and a lane round the back when the target is behind. Waypoints mean the
 same under both — points the wire passes through — so switching moves no data;
 in right angles each one is a corner, and a dragged handle snaps onto the row or
-column of its neighbour (`waypointAlignSnap`, 6 px). Neither style routes
+column of its neighbour (`waypointAlignSnap`, 6 px) — on whichever axes claim
+one, with the grid taking the rest when snapping is on. Neither style routes
 around cards: the waypoints are what a wire is taken around a card with, and a
 straight leg under a card shows it where a swoop does not — which is why
 curved is the default.
@@ -670,9 +673,42 @@ rather than gated.
 
 `NodeEditorTheme.dark()` / `.light()`, or build one field by field. It covers
 colours, the grid, connection width, curvature and style, port radius and
-`portMinScale`, selection and marquee styling, scale limits, `snapToGrid`, hit
-tolerances and the direction markers. Omit `theme` and the editor picks dark or
-light from the ambient `Theme` brightness.
+`portMinScale`, selection and marquee styling, scale limits, hit tolerances and
+the direction markers. `gridSpacing` doubles as the step a snapped move lands
+on — see *Snapping* below. Omit `theme` and the editor picks dark or light from
+the ambient `Theme` brightness.
+
+### Snapping
+
+```dart
+controller.snapToGrid = true;
+```
+
+A node's top-left corner then lands on the grid the canvas draws — a drag, an
+arrow-key nudge, the corner grip and a dragged waypoint all take it, and each
+node in a selection rounds its own corner. **The step is not a number of its
+own**: it is `NodeEditorTheme.gridSpacing`, which the editor hands the
+controller, so what a card lands on is a line you can see. `snapStep` is that
+value resolved, and `0` whenever nothing snaps.
+
+It is on the controller rather than the theme so that turning it on does not
+mean handing `NodeEditor` a new theme, which is the rebuild the callout near
+the top of this file warns about. Three things it deliberately leaves alone:
+`Shift` and an arrow place a node exactly, ignoring the grid; an orthogonal
+waypoint lined up with its neighbour's row stays lined up, since a corner with
+no jog beats a corner on a line; and `applyLayout` never snaps, because an
+arrangement is a computed picture rather than something a pointer expressed. `GridSnap.offset` is the rounding, public, so a host that
+places a node itself can reach the same answer:
+
+```dart
+controller.applyLayout(
+  (graph, sizeOf) => myLayout(graph, sizeOf)
+      .map((id, at) => MapEntry(id, GridSnap.offset(at, 24))),
+);
+```
+
+Snapping is independent of `showGrid`: the lattice is a fact about the scene,
+not about what is painted.
 
 ## Interaction
 
@@ -695,6 +731,7 @@ light from the ambient `Theme` brightness.
 | `Ctrl+G` | Frame the selection, or widen the frame in it |
 | Right-click anything | Its context menu |
 | `Del`, `Ctrl+Z`/`Ctrl+Shift+Z`, `Ctrl+A`, `Esc`, arrows | Delete, undo/redo, select all, cancel, nudge |
+| `Shift` + arrows | Nudge one unit, exactly — ignoring the grid |
 | `Ctrl+C`/`Ctrl+X`/`Ctrl+V`/`Ctrl+D` | Copy, cut, paste, duplicate |
 
 `canvasDragBehavior: CanvasDragBehavior.pan` swaps the first two rows — canvas

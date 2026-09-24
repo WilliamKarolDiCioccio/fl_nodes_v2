@@ -48,7 +48,6 @@ class NodeEditorTheme {
     this.selectionInset = 3,
     this.minScale = 0.15,
     this.maxScale = 3.0,
-    this.snapToGrid = 0,
     this.connectionHitTolerance = 9,
     this.connectionArrowSpacing = 140,
     this.connectionArrowMaxCount = 4,
@@ -244,9 +243,6 @@ class NodeEditorTheme {
   final double minScale;
   final double maxScale;
 
-  /// Grid size that dragged nodes snap to; 0 disables snapping.
-  final double snapToGrid;
-
   NodeEditorTheme copyWith({
     Color? background,
     Color? gridLine,
@@ -290,7 +286,6 @@ class NodeEditorTheme {
     Color? marqueeColor,
     double? minScale,
     double? maxScale,
-    double? snapToGrid,
   }) {
     return NodeEditorTheme(
       background: background ?? this.background,
@@ -344,7 +339,6 @@ class NodeEditorTheme {
       marqueeColor: marqueeColor ?? this.marqueeColor,
       minScale: minScale ?? this.minScale,
       maxScale: maxScale ?? this.maxScale,
-      snapToGrid: snapToGrid ?? this.snapToGrid,
     );
   }
 
@@ -393,7 +387,6 @@ class NodeEditorTheme {
     marqueeColor,
     minScale,
     maxScale,
-    snapToGrid,
   ];
 
   @override

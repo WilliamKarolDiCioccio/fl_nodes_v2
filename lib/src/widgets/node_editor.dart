@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import '../controller/node_editor_controller.dart';
 import '../geometry/connection_path.dart';
+import '../geometry/grid_snap.dart';
 import '../geometry/viewport_transform.dart';
 import '../model/graph_node.dart';
 import '../model/node_port.dart';
@@ -396,6 +397,9 @@ class NodeEditorState extends State<NodeEditor>
       _connectedPortsSource = null;
       _connectedPortsCache = const <String, Set<String>>{};
       _connections.invalidate();
+      // And it has never been told the grid: `_resolveTheme` is skipped above
+      // whenever the theme itself did not change, which is most swaps.
+      _controller.reportGridStep(_theme.gridSpacing);
     }
     // A host that has started supplying its own leaves ours with nothing to
     // do; one that has stopped gets a fresh one on the next read.
@@ -413,6 +417,10 @@ class NodeEditorState extends State<NodeEditor>
         (Theme.of(context).brightness == Brightness.dark
             ? NodeEditorTheme.dark()
             : NodeEditorTheme.light());
+    // Before the early return: an unchanged theme still has to reach a
+    // controller that has not been told it. (A swap under a theme that did
+    // not change is caught in `didUpdateWidget`, which never gets here.)
+    _controller.reportGridStep(resolved.gridSpacing);
     if (resolved == _resolvedTheme) return;
     _resolvedTheme = resolved;
     _connections
@@ -1028,7 +1036,7 @@ class NodeEditorState extends State<NodeEditor>
       _controller.moveNodes(<String, Offset>{
         for (final entry in _nodeDragStartPositions.entries)
           entry.key: entry.value + delta,
-      }, snap: _theme.snapToGrid);
+      });
     } else {
       _stopEdgeScroll();
       return;
@@ -1069,13 +1077,31 @@ class NodeEditorState extends State<NodeEditor>
     _controller.moveWaypoint(
       waypoint.connectionId,
       waypoint.index,
-      _alignedWaypoint(waypoint, scene),
-      snap: _theme.snapToGrid,
+      _placeWaypoint(waypoint, scene),
     );
   }
 
-  /// [scene] pulled onto its neighbours' row or column when it comes within
-  /// `waypointAlignSnap` of one, for an orthogonal wire.
+  /// Where a dragged handle goes: its neighbours' row or column on whichever
+  /// axes claim one, the grid on the rest.
+  ///
+  /// The order is the whole of it, and it is per axis rather than one answer
+  /// for the point. Alignment is asked about the *raw* pointer, because its
+  /// tolerance is a few screen pixels and a grid step is tens of scene units
+  /// — snapping first would hand it a point its neighbour is never near
+  /// enough to, and the alignment would silently stop firing rather than
+  /// losing to the grid. An axis it does claim keeps that value untouched: a
+  /// corner with no jog beats a corner on a line.
+  Offset _placeWaypoint(WaypointRef waypoint, Offset scene) {
+    final aligned = _alignedWaypoint(waypoint, scene);
+    final step = _controller.snapStep;
+    return Offset(
+      aligned.x ?? GridSnap.axis(scene.dx, step),
+      aligned.y ?? GridSnap.axis(scene.dy, step),
+    );
+  }
+
+  /// Which of [scene]'s axes lie within `waypointAlignSnap` of a neighbour's,
+  /// and the value each takes, for an orthogonal wire. Null is unclaimed.
   ///
   /// A handle there is a corner, and a corner a pixel off the row of the
   /// point before it draws a one-pixel jog that no amount of care with the
@@ -1083,12 +1109,16 @@ class NodeEditorState extends State<NodeEditor>
   /// the ports at the two ends — and each axis snaps on its own, so a
   /// handle can share a row with one neighbour and a column with the other,
   /// which is exactly the corner between them.
-  Offset _alignedWaypoint(WaypointRef waypoint, Offset scene) {
-    if (_theme.connectionStyle != ConnectionStyle.orthogonal) return scene;
+  ({double? x, double? y}) _alignedWaypoint(
+    WaypointRef waypoint,
+    Offset scene,
+  ) {
+    const none = (x: null, y: null);
+    if (_theme.connectionStyle != ConnectionStyle.orthogonal) return none;
     final tolerance = _theme.waypointAlignSnap / _viewport.scale;
-    if (tolerance <= 0) return scene;
+    if (tolerance <= 0) return none;
     final connection = _controller.graph.connections[waypoint.connectionId];
-    if (connection == null) return scene;
+    if (connection == null) return none;
 
     final layout = _controller.layout;
     final before = waypoint.index == 0
@@ -1098,14 +1128,19 @@ class NodeEditorState extends State<NodeEditor>
         ? layout.portPosition(connection.to)
         : connection.waypoints[waypoint.index + 1];
 
-    var x = scene.dx;
-    var y = scene.dy;
+    // Null is "this axis is free", which is not the same as an axis that
+    // aligned to a neighbour already exactly level with it. Inferring the
+    // claim from a changed coordinate would read that case as free and snap
+    // it to the grid — breaking an alignment on the one frame the user had it
+    // perfect.
+    double? x;
+    double? y;
     for (final neighbour in <Offset?>[before, after]) {
       if (neighbour == null) continue;
       if ((neighbour.dx - scene.dx).abs() <= tolerance) x = neighbour.dx;
       if ((neighbour.dy - scene.dy).abs() <= tolerance) y = neighbour.dy;
     }
-    return Offset(x, y);
+    return (x: x, y: y);
   }
 
   void _handleWaypointDragEnd() {
@@ -1196,15 +1231,23 @@ class NodeEditorState extends State<NodeEditor>
 
     // Pointer deltas arrive in screen pixels; the box lives in scene units.
     final delta = (globalPosition - resize.origin) / _viewport.scale;
-    final snap = _theme.snapToGrid;
-    double snapped(double value) =>
-        snap > 0 ? (value / snap).roundToDouble() * snap : value;
+    final step = _controller.snapStep;
 
-    final width = snapped(
+    // The *edge* is what lands on a line, not the extent. Rounding a width
+    // puts the right edge on a line only for a card whose left edge is
+    // already on one, and nothing ever pulls an existing node's position onto
+    // the grid behind the user's back — the toggle can be switched on over a
+    // graph laid out without it.
+    double edge(double origin, double extent) =>
+        GridSnap.axis(origin + extent, step) - origin;
+
+    final width = edge(
+      node.position.dx,
       resize.size.width + delta.dx,
     ).clamp(prototype.resizeFloor, prototype.maxWidth ?? double.infinity);
     final natural = _controller.layout.anchorSizeOf(node).height;
-    final wanted = snapped(
+    final wanted = edge(
+      node.position.dy,
       resize.size.height + delta.dy,
     ).clamp(natural, prototype.maxHeight ?? double.infinity);
     final double? floor = wanted > natural ? wanted : null;
@@ -1601,11 +1644,20 @@ class NodeEditorState extends State<NodeEditor>
 
     final nudge = _nudgeFor(key);
     if (nudge != null && _controller.selection.nodeIds.isNotEmpty) {
-      final grid = _theme.snapToGrid > 0 ? _theme.snapToGrid : 8.0;
-      final step = keyboard.isShiftPressed ? 1.0 : grid;
+      // Shift is the fine nudge, and with snapping on it also means *ignore
+      // the grid*: one scene unit rounded to a grid step is a guaranteed
+      // no-op, so honouring the preference here would delete the keybinding
+      // rather than refine it.
+      final fine = keyboard.isShiftPressed;
+      final grid = _controller.snapStep;
+      // The fallback has to survive on its own. Reaching for `snapStep` here
+      // would make the step zero whenever the toggle is off, and the arrow
+      // keys would stop moving anything at all.
+      final step = fine ? 1.0 : (grid > 0 ? grid : 8.0);
       _controller.translateNodes(
         _controller.selection.nodeIds.toList(),
         nudge * step,
+        snap: !fine,
       );
       return KeyEventResult.handled;
     }

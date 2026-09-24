@@ -223,9 +223,9 @@ purpose: a card's handles must stay on the rows they were wired to however
 tall the card is made. A measured node is built inside a `ConstrainedBox` at
 its floor, so its content decides and the two sizes agree. A prototype that
 wants the room *used* reads the floor in `resolveHeight`. `_handleNodeResize*`
-bracket the drag in one history transaction, snap to `snapToGrid`, clamp to
-`resizeFloor`/`maxWidth`/`maxHeight` and clear the floor when the drag comes
-back to the natural height. `node_resize_test.dart`.
+bracket the drag in one history transaction, pull the dragged *edge* onto the
+grid (see *Snapping*), clamp to `resizeFloor`/`maxWidth`/`maxHeight` and clear
+the floor when the drag comes back to the natural height. `node_resize_test.dart`.
 
 ## Waypoints
 
@@ -251,7 +251,8 @@ A wire can be routed through points the user puts on it — `NodeConnection.wayp
 
 Two rules about nodes moving, both in the controller: a drag that carries
 **both** ends of a wire carries its route (the emitting end's delta, since the
-two can differ by a snap); one end moving leaves the route pinned. `applyLayout`
+two can differ by a snap — and, with the grid on, by a whole frame of one; see
+*Snapping*); one end moving leaves the route pinned. `applyLayout`
 clears the routes of the wires it moved, in the same step — an arrangement is a
 new picture. The canvas synthesises its double tap the way `NodeView` does,
 and for the same reason. `nearestOnRoute` works per segment because one contour
@@ -259,6 +260,91 @@ cannot say which cubic a distance along it fell in, and the index is the answer
 that matters. The menu is the wire's with `waypoint`/`insertion` on
 `NodeMenuConnectionTarget` rather than a new target, so a host's `build` hook
 keeps matching what it matched.
+
+## Snapping
+
+`controller.snapToGrid` is a **bool**, and every decision about it follows from
+one sentence: *the step is not a number of its own.* It is the theme's
+`gridSpacing`, so a card lands on a line somebody can see. The predecessor of
+this feature was `NodeEditorTheme.snapToGrid`, a second `double` that defaulted
+to 0 and had nothing to do with the grid — the example drew at 24 and snapped
+to 16 — and the whole of the bug was that two numbers can disagree.
+
+**It is on the controller for the reason `emphasis` is.** A theme field can
+only be flipped by handing `NodeEditor` a new theme, which is the one rebuild
+this package asks a host not to do; the toggle is where the user is working
+rather than how the canvas looks. It notifies and deliberately does **not**
+bump `revision` — nothing has moved, and the revision is what throws away the
+connection path cache.
+
+**The editor tells the controller the step**, through `reportGridStep`, exactly
+as it tells `layout` a measured size through `reportMeasuredSize` — same
+precedent, same assumption of one editor per controller. That is what lets
+`moveNodes` resolve `snapStep` itself, and it is why the three `snap:` doubles
+those methods used to take are gone: a bool on the controller that its own
+`translateNodes` then ignored would be a trap with a name that denied it. The
+call is made *before* `_resolveTheme`'s early return, or a controller swapped
+under an unchanged theme is never told anything.
+
+Four things that are not simply "round everything", each paid for:
+
+- **Each dragged node snaps its own top-left**, so a selection can change shape
+  as it lands. The alternative — snap one anchor, carry the rest by its delta —
+  keeps the shape and leaves every other card off the grid for ever. This was
+  chosen; it is not an oversight.
+- **A fine nudge overrides the grid.** `Shift` and an arrow move one unit, and
+  one unit rounded to a cell is a guaranteed no-op — honouring the preference
+  there deletes the keybinding rather than refining it, so the nudge passes
+  `snap: false`. That `bool` on `moveNodes` is a real choice at the call site,
+  unlike the `draggable` flag `applyLayout` refuses to take: the *user* is
+  saying "exactly here". Note also that the plain arrow's `8.0` fallback has to
+  stand on its own — reaching for `snapStep` makes the step zero with the
+  toggle off and the arrow keys dead.
+- **A waypoint's alignment is asked about the raw pointer, per axis.**
+  `waypointAlignSnap` is six screen pixels and a cell is tens of scene units,
+  so snapping first hands the alignment a point no neighbour is ever near
+  enough to and it stops firing altogether rather than losing to the grid.
+  `_alignedWaypoint` returns `({double? x, double? y})` — the *claim*, not a
+  point — because a handle already dead on its neighbour's column aligns to a
+  value equal to the one it had, and inferring the claim from a changed
+  coordinate reads that as free and snaps it away. The one frame the user had
+  it perfect is the one it would break.
+- **The resize snaps the edge, not the extent.** Rounding a width puts the
+  right edge on a line only for a card whose left edge is already on one, and
+  nothing ever pulls an existing node's position onto the grid behind the
+  user's back. Two places where the edge still is not on a line, both correct:
+  a card pinned at `maxWidth`, since the clamp runs after; and the bottom edge
+  at or below the natural height, since `wanted` is a `minHeight` *floor* that
+  is discarded there. "Pulled to the grid before the limits are applied" is the
+  honest phrasing.
+
+**`applyLayout` ignores the toggle**, by the same rule that has it ignore
+`draggable`: the toggle says what a pointer may express, and a computed picture
+is not one. An arrangement derives its rank gaps from measured sizes and
+`ConnectionLabel.maxWidth`; rounding its output would change a spacing it
+worked out. A host that wants the grid maps `GridSnap.offset` over its own
+result, which is most of why `GridSnap` is exported rather than private.
+
+**`_carriedRoutes` had a latent bug this turned on.** `moveNodes` recorded a
+delta only for nodes that moved *this frame*, and a carried route needs both
+ends present — but two ends at different sub-grid offsets cross their lines on
+different frames, so with snapping on both are almost never in one map and a
+dragged selection left its waypoints behind entirely. A zero delta stays in the
+map now and `_carriedRoutes` skips a still *emitter*, which is what the comment
+there always claimed. `moveNodes` also gained the `if (updated.isEmpty) return;`
+that `_place` has: `_mutate` asks `guard` before it notices an edit changed
+nothing, and with snapping on most frames change nothing.
+
+**The clipboard nudges by a cell** while the toggle is on. `pasteNudge` is 32
+and a cell is 24, so a duplicate of a card standing on a line stood eight units
+off one and jumped the moment it was dragged.
+
+Two facts the doc comments carry because they get asked: snapping is
+independent of `showGrid`, so the lattice can be invisible — it is a fact about
+the scene rather than about what is painted; and the drawn grid loses its minor
+lines below about 0.29 scale and vanishes under `GridShader.isTooDense`, so the
+step stays scale-independent on purpose. A snap that changed size with the zoom
+would make one drag mean two things.
 
 ## Port shapes and port labels
 
@@ -847,8 +933,8 @@ warning.**
   Position is user state and would fight the drag path; width is a plausible
   future `resolveSize`. `NodePrototype.defaultWidth` is only a seed for
   `instantiate`.
-- No node resizing handles. Comments size themselves to their text and group
-  frames size themselves to their members, so nothing on the canvas is resized
-  by hand.
+- Comments size themselves to their text and group frames size themselves to
+  their members, so neither is resized by hand; a node with a `resizable`
+  prototype has a corner grip.
 - Groups do not nest, and a node belongs to at most one. Both are enforced in
   `putGroup` rather than left to the caller.

@@ -468,10 +468,14 @@ void main() {
       expect(moved.dx, 320, reason: 'the other axis is left alone');
     });
 
-    testWidgets('a curved wire does not snap: a handle goes where it is put', (
-      tester,
-    ) async {
-      final controller = await pump(tester, theme: NodeEditorTheme.dark());
+    testWidgets('with the grid on, a row still beats a line', (tester) async {
+      final controller = await pump(
+        tester,
+        theme: NodeEditorTheme.dark().copyWith(
+          connectionStyle: ConnectionStyle.orthogonal,
+        ),
+      );
+      controller.snapToGrid = true;
       final wire = controller.graph.connections.values.single;
       final portY = controller.layout.portPosition(wire.from)!.dy;
 
@@ -483,7 +487,126 @@ void main() {
       );
 
       final moved = controller.graph.connections.values.single.waypoints.single;
-      expect(moved, Offset(320, portY + 4));
+      expect(
+        moved.dy,
+        portY,
+        reason:
+            'the alignment is asked about the raw pointer, so it still fires '
+            'at four pixels — snapping first would hand it a point 24 units '
+            'away from the row and it would quietly stop firing rather than '
+            'lose',
+      );
+      expect(
+        moved.dx,
+        312,
+        reason: 'and the axis no neighbour claimed takes the grid',
+      );
     });
+
+    testWidgets('with the grid on, an unclaimed handle takes both lines', (
+      tester,
+    ) async {
+      final controller = await pump(
+        tester,
+        theme: NodeEditorTheme.dark().copyWith(
+          connectionStyle: ConnectionStyle.orthogonal,
+        ),
+      );
+      controller.snapToGrid = true;
+
+      await dragHandle(
+        tester,
+        controller,
+        const Offset(300, 200),
+        const Offset(350, 250),
+      );
+
+      final moved = controller.graph.connections.values.single.waypoints.single;
+      expect(moved, const Offset(360, 240));
+    });
+
+    testWidgets('with the grid on, an exact alignment is still an alignment', (
+      tester,
+    ) async {
+      final controller = await pump(
+        tester,
+        theme: NodeEditorTheme.dark().copyWith(
+          connectionStyle: ConnectionStyle.orthogonal,
+        ),
+      );
+      controller.snapToGrid = true;
+      final wire = controller.graph.connections.values.single;
+      final portX = controller.layout.portPosition(wire.to)!.dx;
+
+      await dragHandle(
+        tester,
+        controller,
+        const Offset(300, 200),
+        Offset(portX, 400),
+      );
+
+      final moved = controller.graph.connections.values.single.waypoints.single;
+      expect(
+        moved.dx,
+        portX,
+        reason:
+            'the handle was already dead on the column, so the alignment '
+            'claimed that axis at zero distance. Reading the claim off a '
+            'changed coordinate would call this axis free and snap it to a '
+            'line — breaking the alignment on the one frame it was perfect',
+      );
+      expect(
+        moved.dx % 24,
+        isNot(0),
+        reason: 'and a port column is not a line',
+      );
+      expect(moved.dy, 408, reason: 'the free axis still takes the grid');
+    });
+
+    testWidgets('with the grid on, a curved handle takes both lines', (
+      tester,
+    ) async {
+      final controller = await pump(tester, theme: NodeEditorTheme.dark());
+      controller.snapToGrid = true;
+      final wire = controller.graph.connections.values.single;
+      final portY = controller.layout.portPosition(wire.from)!.dy;
+
+      await dragHandle(
+        tester,
+        controller,
+        const Offset(300, 200),
+        Offset(320, portY + 4),
+      );
+
+      final moved = controller.graph.connections.values.single.waypoints.single;
+      expect(
+        moved.dx,
+        312,
+        reason:
+            'a point on a curve has no row to be on, so only the grid '
+            'reaches it',
+      );
+      expect(moved.dy % 24, 0);
+    });
+
+    testWidgets(
+      'a curved wire ignores the rows: a handle goes where it is put',
+      (tester) async {
+        final controller = await pump(tester, theme: NodeEditorTheme.dark());
+        final wire = controller.graph.connections.values.single;
+        final portY = controller.layout.portPosition(wire.from)!.dy;
+
+        await dragHandle(
+          tester,
+          controller,
+          const Offset(300, 200),
+          Offset(320, portY + 4),
+        );
+
+        final moved =
+            controller.graph.connections.values.single.waypoints.single;
+        expect(moved, Offset(320, portY + 4));
+      },
+    );
   });
 }

@@ -7,7 +7,9 @@ import 'package:fl_nodes_v2/fl_nodes_v2.dart';
 /// A drag held against the edge of the canvas scrolls it, so a target off
 /// screen can be reached without letting go to zoom out. Wires and nodes
 /// both; and the drag keeps up with the camera, so what is held stays under
-/// the pointer while the canvas moves beneath it.
+/// the pointer while the canvas moves beneath it — exactly, unless snapping
+/// is on, where the node advances a cell at a time and slips under the
+/// pointer between them.
 void main() {
   final NodeEditorTheme theme = NodeEditorTheme.dark();
 
@@ -219,6 +221,38 @@ void main() {
     expect(
       nodeAfter.dx - nodeBefore.dx,
       moreOrLessEquals(offsetBefore.dx - offsetAfter.dx, epsilon: 0.01),
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a snapped node keeps scrolling: a no-op frame is not a stop', (
+    tester,
+  ) async {
+    final controller = await boot(tester);
+    controller.snapToGrid = true;
+    final start = screenPoint(tester, controller, const Offset(180, 145));
+
+    final gesture = await dragTo(tester, start, nearRightEdge(tester, 10));
+    final offsetBefore = controller.camera.viewport.offset;
+    final nodeBefore = controller.graph.nodes['a']!.position;
+
+    await hold(tester, 20);
+
+    expect(
+      controller.camera.viewport.offset.dx,
+      lessThan(offsetBefore.dx),
+      reason:
+          'most frames of a snapped drag move the node nowhere, and a frame '
+          'that changes nothing must not be read as the drag being over',
+    );
+    final nodeAfter = controller.graph.nodes['a']!.position;
+    expect(nodeAfter.dx, greaterThan(nodeBefore.dx));
+    expect(
+      nodeAfter.dx % theme.gridSpacing,
+      0,
+      reason: 'and it advances in whole cells rather than trailing the camera',
     );
 
     await gesture.up();
