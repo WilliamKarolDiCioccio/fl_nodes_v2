@@ -496,6 +496,30 @@ transition, after the notification rather than before it: a host that arranges
 from there mutates the graph, and doing that midway through announcing a
 measurement would have listeners reading a graph that is about to move.
 
+**`descriptionBuilder` is the third hook of that shape**, beside `portTooltip`
+and `onEditConnectionLabel`: the package holds a description, and the host
+decides what it is written in. A prototype's `description`, a port's and a
+field's are all plain strings, because whether they are prose or Markdown is
+not the package's business — and the alternative, rendering Markdown here,
+means a dependency on a Markdown renderer that every consumer pays for one
+read-only dialog. The default is `SelectableText`; a host that writes Markdown
+hands over its own body with its own styles, its own link handling and its own
+extensions already in it.
+
+**A port's description is outside `==`, `hashCode` and the codec, and that is
+load-bearing.** Ports are serialised, and resolution keeps the node it already
+has when `listEquals` says the ports it would build match the ones on it. Put
+prose inside equality and every document written before the prose existed
+differs from what its prototype now builds — so opening one rewrites every node
+in it, and a host with an autosave writes a file nobody edited. Serialise it
+instead and the same sentence is copied into every document holding the node.
+So it is stamped on by the family that builds the port and read from there; a
+port that came off a disk carries nothing. `test/node_description_test.dart`
+pins both halves, the last test being that regression written down.
+A **field's** description is neither serialised nor excluded, because a field
+declaration never leaves the prototype — a node stores the value under its key
+and nothing else.
+
 ## Watching a run
 
 `runner.onEvent` and `runner.tracePayloads`, a listener and a switch, null and

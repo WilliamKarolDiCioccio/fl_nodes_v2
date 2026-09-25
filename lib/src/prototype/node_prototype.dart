@@ -79,12 +79,22 @@ class NodeField {
     required this.key,
     this.defaultValue,
     this.label,
+    this.description,
     this.data,
   });
 
   final String key;
   final Object? defaultValue;
   final String? label;
+
+  /// What this control on the card does, in prose — the field's half of
+  /// [NodePrototype.description].
+  ///
+  /// Unlike a port's, a field is never serialised: a node stores the *value*
+  /// under [key] and the declaration stays on the prototype, so this costs a
+  /// document nothing and needs no care around equality.
+  final String? description;
+
   final Object? data;
 
   @override
@@ -94,10 +104,11 @@ class NodeField {
           other.key == key &&
           other.defaultValue == defaultValue &&
           other.label == label &&
+          other.description == description &&
           other.data == data;
 
   @override
-  int get hashCode => Object.hash(key, defaultValue, label, data);
+  int get hashCode => Object.hash(key, defaultValue, label, description, data);
 
   @override
   String toString() => 'NodeField($key)';
@@ -163,6 +174,12 @@ class NodePrototype {
   /// The editor's node menu offers it read-only, and offers nothing when this
   /// is null — help text belongs to the kind of node, written once by whoever
   /// wrote the prototype, not to each copy on the canvas.
+  ///
+  /// A plain string, and deliberately not a document: whether the host writes
+  /// prose or Markdown here is the host's to decide and `NodeEditor`'s
+  /// `descriptionBuilder` is how it renders what it wrote. [NodePort.description]
+  /// and [NodeField.description] say the same thing about one wire and one
+  /// control, so a whole card can explain itself in the same voice.
   final String? description;
 
   /// The width a freshly instantiated node of this type starts at.

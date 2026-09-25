@@ -87,6 +87,7 @@ class NodeEditor extends StatefulWidget {
     this.onCanvasSecondaryTap,
     this.onPortSecondaryTap,
     this.portTooltip,
+    this.descriptionBuilder,
     this.onConnectionSecondaryTap,
     this.contextMenus = const NodeEditorMenus(),
     this.edgeScroll = const EdgeScrollConfig(),
@@ -155,6 +156,20 @@ class NodeEditor extends StatefulWidget {
   /// so a host can label the ports worth labelling and leave the obvious ones
   /// alone.
   final String? Function(GraphNode node, NodePort port)? portTooltip;
+
+  /// Renders a node's description in the "About this node" dialog, or null to
+  /// show it as plain selectable text.
+  ///
+  /// **The package will not decide what a description is written in.**
+  /// [NodePrototype.description] is a string, and whether it is prose, Markdown
+  /// or something a host invented is the host's business — a package that
+  /// rendered Markdown would be a package that depends on a Markdown renderer,
+  /// which is a dependency every consumer pays for one dialog. So the default
+  /// stays [SelectableText] and a host that writes Markdown passes its own
+  /// body here, with its own styles, its own link handling and its own
+  /// extensions already in it.
+  final Widget Function(BuildContext context, String description)?
+  descriptionBuilder;
   final void Function(NodeConnection connection, Offset globalPosition)?
   onConnectionSecondaryTap;
 
@@ -1495,6 +1510,7 @@ class NodeEditorState extends State<NodeEditor>
         context,
         description: description,
         title: _controller.prototypes[node.type]?.label ?? node.type,
+        builder: widget.descriptionBuilder,
       ),
     );
   }
