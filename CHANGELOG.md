@@ -38,6 +38,23 @@ change lives beside the code in `CLAUDE.md`; this file only says what changed.
   moving used to mean both ends moving in the same *frame*, which snapping
   makes almost never true.
 
+### A card can explain itself
+
+- **`NodePort.description` and `NodeField.description`** say what one wire
+  carries and what one control on the card does, beside the prototype's own
+  `description`. A host with a documentation page no longer keeps that prose
+  in two places.
+  A port's is **outside `==`, `hashCode` and the codec**, on purpose: a port is
+  serialised and resolution keeps the node it has when the ports it would build
+  compare equal, so comparing prose would rewrite every node in every document
+  written before the prose existed. A field's is neither serialised nor
+  compared-away, because a field declaration never leaves the prototype.
+- **`NodeEditor.descriptionBuilder`** renders the "About this node" dialog's
+  body. The default is still selectable plain text; a host whose descriptions
+  are Markdown passes its own body, with its own styles and link handling. The
+  package gains no dependency — what a description is written in is the host's
+  decision, not the package's.
+
 ## 0.5.0
 
 ### Ports

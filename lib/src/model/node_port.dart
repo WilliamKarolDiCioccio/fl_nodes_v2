@@ -31,6 +31,7 @@ class NodePort {
     required this.id,
     required this.direction,
     this.label,
+    this.description,
     PortSide? side,
     this.anchor,
     this.color,
@@ -46,6 +47,7 @@ class NodePort {
   const NodePort.input({
     required String id,
     String? label,
+    String? description,
     PortSide? side,
     Offset? anchor,
     Color? color,
@@ -59,6 +61,7 @@ class NodePort {
          id: id,
          direction: PortDirection.input,
          label: label,
+         description: description,
          side: side,
          anchor: anchor,
          color: color,
@@ -74,6 +77,7 @@ class NodePort {
   const NodePort.output({
     required String id,
     String? label,
+    String? description,
     PortSide? side,
     Offset? anchor,
     Color? color,
@@ -87,6 +91,7 @@ class NodePort {
          id: id,
          direction: PortDirection.output,
          label: label,
+         description: description,
          side: side,
          anchor: anchor,
          color: color,
@@ -105,6 +110,23 @@ class NodePort {
 
   /// Optional caption rendered next to the port handle.
   final String? label;
+
+  /// What a wire drawn from this port means, in prose, for the reader of a
+  /// graph — the port's half of [NodePrototype.description].
+  ///
+  /// **Deliberately outside [==], [hashCode] and the codec.** A port is
+  /// serialised, and resolution keeps the node it already has when the ports
+  /// it would build compare equal to the ones on it. Were this compared, every
+  /// document written before a description existed would come back differing
+  /// from what its prototype now builds, and opening it would rewrite every
+  /// node in it — a dirty file for prose nobody edited. Were it serialised,
+  /// the same sentence would be copied into every board that holds the node.
+  ///
+  /// It belongs to the *kind* of port, written once by whoever wrote the
+  /// prototype, so it is stamped on by the family that builds the port and is
+  /// read from there. A port that came off a disk rather than out of a family
+  /// carries whatever was written down, which is nothing.
+  final String? description;
 
   final PortSide? _side;
 
@@ -176,6 +198,7 @@ class NodePort {
     String? id,
     PortDirection? direction,
     String? label,
+    String? description,
     PortSide? side,
     Offset? anchor,
     Color? color,
@@ -190,6 +213,7 @@ class NodePort {
       id: id ?? this.id,
       direction: direction ?? this.direction,
       label: label ?? this.label,
+      description: description ?? this.description,
       side: side ?? _side,
       anchor: anchor ?? this.anchor,
       color: color ?? this.color,
