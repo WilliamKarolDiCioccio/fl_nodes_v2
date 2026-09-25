@@ -42,7 +42,7 @@ void main() {
   Future<NodeEditorController> boot(
     WidgetTester tester, {
     String type = 'card',
-    double snap = 0,
+    bool snap = false,
   }) async {
     final controller = NodeEditorController(prototypes: prototypes);
     addTearDown(controller.dispose);
@@ -50,6 +50,7 @@ void main() {
       prototypes.instantiate(type, id: 'a', position: const Offset(100, 100)),
     );
     controller.history.clear();
+    controller.snapToGrid = snap;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -60,7 +61,7 @@ void main() {
               height: 600,
               child: NodeEditor(
                 controller: controller,
-                theme: NodeEditorTheme.dark().copyWith(snapToGrid: snap),
+                theme: NodeEditorTheme.dark().copyWith(gridSpacing: 20),
                 nodeBuilder: (context, node, state) => const SizedBox(
                   height: 120,
                   child: ColoredBox(color: Color(0xFF2A2E38)),
@@ -232,10 +233,8 @@ void main() {
     expect(controller.graph.node('a')!.width, 400, reason: 'nor past maxWidth');
   });
 
-  testWidgets('the width snaps to the grid the positions snap to', (
-    tester,
-  ) async {
-    final controller = await boot(tester, snap: 20);
+  testWidgets('the edge lands on the grid, not the extent', (tester) async {
+    final controller = await boot(tester, snap: true);
 
     await drag(
       tester,
@@ -243,8 +242,24 @@ void main() {
       const Offset(296, 216),
       const Offset(53, 47),
     );
-    expect(controller.graph.node('a')!.width, 260);
-    expect(controller.graph.node('a')!.minHeight, 160);
+    final node = controller.graph.node('a')!;
+    expect(
+      node.position,
+      const Offset(100, 100),
+      reason: 'a resize moves no corner but the one being dragged',
+    );
+    expect(
+      node.position.dx + node.width,
+      360,
+      reason: 'the right edge is on a line — 20 divides it',
+    );
+    expect(node.width, 260);
+    expect(
+      node.position.dy + node.minHeight!,
+      260,
+      reason: 'and so is the bottom, while the card is stretched past natural',
+    );
+    expect(node.minHeight, 160);
   });
 
   testWidgets('a prototype that did not opt in has no grip', (tester) async {

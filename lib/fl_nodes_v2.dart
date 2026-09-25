@@ -63,6 +63,7 @@ export 'src/geometry/connection_path.dart'
 export 'src/geometry/orthogonal_route.dart' show OrthogonalRoute;
 export 'src/geometry/connection_router.dart'
     show ConnectionEndpoints, ConnectionRouter;
+export 'src/geometry/grid_snap.dart' show GridSnap;
 export 'src/geometry/node_geometry.dart' show NodeGeometry;
 export 'src/geometry/viewport_transform.dart' show ViewportTransform;
 export 'src/model/graph_emphasis.dart' show GraphEmphasis;

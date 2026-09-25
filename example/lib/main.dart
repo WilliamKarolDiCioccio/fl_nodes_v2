@@ -78,7 +78,6 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
   late final NodeEditorController _controller;
 
   bool _showGrid = true;
-  bool _snapToGrid = false;
 
   /// Off by default: a wire let go by accident should cost nothing.
   bool _createOnDrop = false;
@@ -185,11 +184,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     final base = widget.isDark
         ? NodeEditorTheme.dark()
         : NodeEditorTheme.light();
-    return base.copyWith(
-      showGrid: _showGrid,
-      snapToGrid: _snapToGrid ? 16 : 0,
-      connectionStyle: _linkStyle,
-    );
+    return base.copyWith(showGrid: _showGrid, connectionStyle: _linkStyle);
   }
 
   /// Places a new node at the centre of the current view.
@@ -629,11 +624,16 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
               value: _showGrid,
               onChanged: (value) => setState(() => _showGrid = value),
             ),
-            _Toggle(
-              icon: Icons.grid_goldenratio,
-              tooltip: 'Snap to grid',
-              value: _snapToGrid,
-              onChanged: (value) => setState(() => _snapToGrid = value),
+            // On the controller, so flipping it rebuilds this one button —
+            // where a theme field would have handed the editor a new theme
+            // and rebuilt every node on the canvas with it.
+            _live(
+              () => _Toggle(
+                icon: Icons.grid_goldenratio,
+                tooltip: 'Snap to grid',
+                value: _controller.snapToGrid,
+                onChanged: (value) => _controller.snapToGrid = value,
+              ),
             ),
             _Toggle(
               icon: Icons.add_link,

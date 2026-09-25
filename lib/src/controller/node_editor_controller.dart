@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../collections/spatial_hash_grid.dart';
 import 'graph_edit.dart';
+import '../geometry/grid_snap.dart';
 import '../geometry/node_geometry.dart';
 import '../geometry/viewport_transform.dart';
 import '../model/graph_emphasis.dart';
@@ -138,6 +139,11 @@ class NodeEditorController extends ChangeNotifier {
 
   int _revision = 0;
 
+  bool _snapToGrid = false;
+
+  /// The drawn grid's spacing, told to us by the editor. See [snapStep].
+  double _gridStep = 0;
+
   /// The note the app user is currently typing into, if any. See
   /// [setCommentText].
   String? _commentBeingTyped;
@@ -164,6 +170,50 @@ class NodeEditorController extends ChangeNotifier {
   int get revision => _revision;
 
   NodeGraph get graph => _graph;
+
+  // ------------------------------------------------------------- snapping
+
+  /// Whether a move lands on the grid the canvas draws.
+  ///
+  /// Here rather than on `NodeEditorTheme` for the reason [emphasis] is here:
+  /// it is where the user is working rather than how the canvas looks, and a
+  /// theme field can only be flipped by handing `NodeEditor` a new theme —
+  /// the one rebuild this package asks a host not to do.
+  ///
+  /// The *step* is not a second number. It is the theme's `gridSpacing`,
+  /// which the editor tells this controller as it resolves its theme, so the
+  /// line a node lands on is a line that is drawn. A controller no editor has
+  /// mounted yet has no spacing to snap to and moves nodes exactly where it
+  /// is told; [snapStep] is what says so.
+  bool get snapToGrid => _snapToGrid;
+
+  set snapToGrid(bool value) {
+    if (_snapToGrid == value) return;
+    _snapToGrid = value;
+    // Deliberately no `_revision++`: the revision means node geometry or the
+    // graph, and nothing has moved yet. Bumping it would throw away the
+    // connection path cache for a toggle that changes no picture.
+    notifyListeners();
+  }
+
+  /// The scene-space step a move lands on, or 0 when nothing snaps.
+  ///
+  /// Zero whenever [snapToGrid] is off, and also when no editor has told this
+  /// controller a spacing — so a headless controller behaves exactly as it
+  /// did before the toggle existed.
+  double get snapStep => _snapToGrid ? _gridStep : 0;
+
+  /// Told by `NodeEditor` as it resolves its theme; a host does not call this.
+  ///
+  /// The editor is the only thing that knows the spacing, in the same way it
+  /// is the only thing that knows a node's measured size — and
+  /// [NodeEditorLayout.reportMeasuredSize] is the precedent, down to assuming
+  /// one editor per controller.
+  ///
+  /// It notifies nobody. The step changes only when the theme does, which the
+  /// editor is already rebuilding for, and a notification from inside
+  /// `didChangeDependencies` would be one during a build.
+  void reportGridStep(double step) => _gridStep = step;
 
   /// [ChangeNotifier.notifyListeners] is `@protected`, and a subsystem is not
   /// a subclass however closely it collaborates. This is the door they use.
@@ -346,20 +396,36 @@ class NodeEditorController extends ChangeNotifier {
     );
   }
 
-  /// Moves nodes to absolute scene positions, snapping when [snap] is set.
-  void moveNodes(Map<String, Offset> positions, {double snap = 0}) {
+  /// Moves nodes to absolute scene positions, onto the grid when
+  /// [snapToGrid] is on.
+  ///
+  /// [snap] is whether this particular move honours that preference, and it
+  /// is a real choice rather than the kind of flag [applyLayout] refuses to
+  /// take: a fine nudge — Shift and an arrow key — is the user asking to
+  /// place a node exactly, which is them overriding the grid rather than a
+  /// caller deciding on their behalf.
+  void moveNodes(Map<String, Offset> positions, {bool snap = true}) {
     if (positions.isEmpty) return;
+    final step = snap ? snapStep : 0.0;
     final updated = <GraphNode>[];
     final deltas = <String, Offset>{};
     positions.forEach((id, position) {
       final node = _graph.nodes[id];
       if (node == null || !node.draggable) return;
-      final target = snap > 0 ? _snap(position, snap) : position;
-      if (node.position != target) {
-        updated.add(node.copyWith(position: target));
-        deltas[id] = target - node.position;
-      }
+      final target = GridSnap.offset(position, step);
+      // A zero delta stays in the map. [_carriedRoutes] reads it to decide
+      // whether a wire is being carried whole, and with snapping on the two
+      // ends of one wire cross their grid lines on *different* frames — so a
+      // map of only what moved this frame would almost never hold both, and
+      // the route would be left behind by a drag that moved every node.
+      deltas[id] = target - node.position;
+      if (node.position != target) updated.add(node.copyWith(position: target));
     });
+    // `_mutate` asks [guard] before it notices an edit changed nothing, and
+    // with snapping on most frames of a drag change nothing — so without this
+    // a host's guard sees a stream of moves carrying an empty set. `_place`
+    // has had the same line for the same reason.
+    if (updated.isEmpty) return;
     _mutate(
       _graph.putNodes(updated).putConnections(_carriedRoutes(deltas)),
       GraphEdit(
@@ -377,13 +443,16 @@ class NodeEditorController extends ChangeNotifier {
   /// would stretch into nonsense behind it. A wire with one end moving stays
   /// routed where it is and the curve re-solves, since the user pinned those
   /// points to the canvas and is moving something else. The two ends' deltas
-  /// can differ by a snap, so the emitting end's is the one taken.
+  /// can differ by a snap — they can differ by a whole frame of it — so the
+  /// emitting end's is the one taken, and a frame where that end stood still
+  /// carries the route nowhere rather than carrying it by the other end's.
   Iterable<NodeConnection> _carriedRoutes(Map<String, Offset> deltas) sync* {
     if (deltas.isEmpty) return;
     for (final connection in _graph.connections.values) {
       if (connection.waypoints.isEmpty) continue;
       final delta = deltas[connection.from.nodeId];
-      if (delta == null || !deltas.containsKey(connection.to.nodeId)) continue;
+      if (delta == null || delta == Offset.zero) continue;
+      if (!deltas.containsKey(connection.to.nodeId)) continue;
       yield connection.copyWith(
         waypoints: List<Offset>.unmodifiable(<Offset>[
           for (final point in connection.waypoints) point + delta,
@@ -454,17 +523,12 @@ class NodeEditorController extends ChangeNotifier {
     return !identical(_graph, before);
   }
 
-  void translateNodes(Iterable<String> ids, Offset delta, {double snap = 0}) {
+  void translateNodes(Iterable<String> ids, Offset delta, {bool snap = true}) {
     moveNodes(<String, Offset>{
       for (final id in ids)
         if (_graph.nodes[id] != null) id: _graph.nodes[id]!.position + delta,
     }, snap: snap);
   }
-
-  static Offset _snap(Offset value, double grid) => Offset(
-    (value.dx / grid).roundToDouble() * grid,
-    (value.dy / grid).roundToDouble() * grid,
-  );
 
   // ---------------------------------------------------------------- groups
 
@@ -672,14 +736,20 @@ class NodeEditorController extends ChangeNotifier {
     ]);
   }
 
-  /// Moves the [index]th waypoint of connection [id] to [point], snapped to
-  /// [snap] when it is positive. Nothing happens for an index the wire does
-  /// not have.
-  void moveWaypoint(String id, int index, Offset point, {double snap = 0}) {
+  /// Moves the [index]th waypoint of connection [id] to [point]. Nothing
+  /// happens for an index the wire does not have.
+  ///
+  /// [point] is taken as given, and [snapToGrid] is deliberately not consulted
+  /// here the way it is in [moveNodes]. Where a dragged handle belongs depends
+  /// on the connection *style* — in right angles a waypoint is a corner, and
+  /// lining it up with its neighbours beats standing it on a grid line — and
+  /// the style is the theme's, which this controller cannot see. The editor
+  /// resolves both and hands down the answer.
+  void moveWaypoint(String id, int index, Offset point) {
     final connection = _graph.connections[id];
     if (connection == null) return;
     if (index < 0 || index >= connection.waypoints.length) return;
-    final target = snap > 0 ? _snap(point, snap) : point;
+    final target = point;
     if (connection.waypoints[index] == target) return;
     setConnectionWaypoints(id, <Offset>[
       for (final (i, existing) in connection.waypoints.indexed)

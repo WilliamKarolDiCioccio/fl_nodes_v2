@@ -35,6 +35,11 @@ class NodeEditorClipboard {
     : _codec = codec;
 
   /// How far each successive paste is offset from the last.
+  ///
+  /// One grid cell instead while [NodeEditorController.snapToGrid] is on —
+  /// see [nudge]. 32 is not a multiple of the grid, so a duplicate of a card
+  /// standing on a line would stand eight units off one and jump the moment
+  /// it was dragged.
   static const Offset pasteNudge = Offset(32, 32);
 
   /// Marks a document on the system clipboard as one of ours.
@@ -45,6 +50,12 @@ class NodeEditorClipboard {
 
   final NodeEditorController _controller;
   final NodeGraphCodec? _codec;
+
+  /// The offset a paste or a duplicate is placed at, grid or no grid.
+  Offset get nudge {
+    final step = _controller.snapStep;
+    return step > 0 ? Offset(step, step) : pasteNudge;
+  }
 
   GraphFragment? _buffer;
   int _pasteCount = 0;
@@ -94,10 +105,10 @@ class NodeEditorClipboard {
 
   /// Copies the selection straight back into the document, without disturbing
   /// the buffer or the system clipboard.
-  Set<String> duplicate({Offset offset = pasteNudge}) {
+  Set<String> duplicate({Offset? offset}) {
     final fragment = _fragmentOf(_controller.selection.nodeIdsWithGroups);
     if (fragment == null) return const <String>{};
-    return _paste(fragment, scenePosition: fragment.origin + offset);
+    return _paste(fragment, scenePosition: fragment.origin + (offset ?? nudge));
   }
 
   /// Pastes whatever the system clipboard holds.
@@ -189,8 +200,7 @@ class NodeEditorClipboard {
     Offset? scenePosition,
     int step = 1,
   }) {
-    final base =
-        scenePosition ?? fragment.origin + pasteNudge * step.toDouble();
+    final base = scenePosition ?? fragment.origin + nudge * step.toDouble();
 
     // Fresh ids for everything. Port ids are node-local, so they ride along
     // unchanged and the remapped endpoints still find them.

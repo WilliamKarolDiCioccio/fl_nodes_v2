@@ -3,6 +3,41 @@
 What a host can do with each version, newest first. The reasoning behind a
 change lives beside the code in `CLAUDE.md`; this file only says what changed.
 
+## Unreleased
+
+### The canvas
+
+- **A move can land on the grid the canvas draws.**
+  `NodeEditorController.snapToGrid` (`bool`, `false`) turns it on, and the
+  step is not a number of its own — it is `NodeEditorTheme.gridSpacing`, which
+  the editor reports to the controller, so a card lands on a line that is
+  drawn. `snapStep` is the resolved scene-space step, `0` when nothing snaps
+  or when no editor has mounted yet. A node's top-left corner is what lands,
+  each dragged node rounds its own, and it reaches a drag, an arrow-key nudge,
+  the corner grip and a dragged waypoint. `GridSnap.axis` and `GridSnap.offset`
+  are the rounding, public so a host placing a node itself gets the same
+  answer. An arrangement through `applyLayout` is untouched by it.
+- **BREAKING: `NodeEditorTheme.snapToGrid` is gone.** It was a second number
+  unrelated to the drawn grid. Set `controller.snapToGrid` instead; to keep a
+  step that is not the spacing, change `gridSpacing`.
+- **BREAKING: `moveNodes`, `translateNodes` and `moveWaypoint` no longer take
+  `snap`.** The first two consult `snapToGrid` themselves and take
+  `snap: false` to place a node exactly — which is what `Shift` and an arrow
+  key now do, since a one-unit nudge rounded to a cell would be a no-op.
+  `moveWaypoint` takes its point as given: where a handle belongs depends on
+  the connection style, so the editor resolves it.
+- **A waypoint lined up with its neighbour stays lined up.** With the grid on,
+  an orthogonal handle takes a neighbour's row or column on whichever axes
+  claim one and the grid on the rest — a corner with no jog beats a corner on
+  a line.
+- **A duplicate lands on the grid.** `NodeEditorClipboard.nudge` is one cell on
+  each axis while snapping is on and `pasteNudge` (32) otherwise;
+  `duplicate({Offset? offset})` takes null for it, where it used to default to
+  `pasteNudge`.
+- **A wire carried by a drag keeps its route when the grid is on.** Both ends
+  moving used to mean both ends moving in the same *frame*, which snapping
+  makes almost never true.
+
 ## 0.5.0
 
 ### Ports
